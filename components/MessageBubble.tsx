@@ -37,7 +37,7 @@ export default function MessageBubble({ message }: Props) {
             : "bg-gradient-to-br from-teal-400 to-cyan-500"
         }`}
       >
-        {isUser ? "U" : "K"}
+        {isUser ? "U" : "C"}
       </div>
 
       {/* Bubble */}

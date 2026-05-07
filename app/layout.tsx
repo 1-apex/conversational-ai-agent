@@ -8,9 +8,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Kyron Medical — AI Scheduling Assistant",
+  title: "CareLink — AI Scheduling Assistant",
   description:
-    "Book appointments with Kyron Medical specialists using our AI-powered scheduling assistant.",
+    "Book appointments with CareLink specialists using our AI-powered scheduling assistant.",
 };
 
 export default function RootLayout({

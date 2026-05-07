@@ -14,9 +14,9 @@ export interface Doctor {
 }
 
 export interface TimeSlot {
-  date: string;       // e.g. "2026-03-24"
-  dayOfWeek: string;  // e.g. "Tuesday"
-  time: string;       // e.g. "2:00 PM"
+  date: string;       
+  dayOfWeek: string;  
+  time: string;       
   doctorName: string;
   booked: boolean;
 }

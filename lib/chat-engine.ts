@@ -33,7 +33,7 @@ export function processMessage(
   switch (state.step) {
     case "greeting":
       return reply(
-        "Welcome to **Kyron Medical**! 👋 I'm your scheduling assistant. I can help you book an appointment with one of our specialists.\n\nTo get started, could you please tell me your **first name**?",
+        "Welcome to **CareLink**! 👋 I'm your scheduling assistant. I can help you book an appointment with one of our specialists.\n\nTo get started, could you please tell me your **first name**?",
         { ...state, step: "collect_firstName" }
       );
 
@@ -200,7 +200,7 @@ export function processMessage(
         );
       }
       return reply(
-        "Thank you for choosing **Kyron Medical**! If you need to schedule another appointment, just let me know. Have a great day! 😊",
+        "Thank you for choosing **CareLink**! If you need to schedule another appointment, just let me know. Have a great day! 😊",
         state
       );
 
@@ -227,7 +227,7 @@ export function processMessage(
       }
 
       return reply(
-        "Hello! I'm the **Kyron Medical** scheduling assistant. I can help you book an appointment with one of our specialists.\n\nJust say something like **\"I need to see a doctor\"** or **\"I have knee pain\"** to get started!",
+        "Hello! I'm the **CareLink** scheduling assistant. I can help you book an appointment with one of our specialists.\n\nJust say something like **\"I need to see a doctor\"** or **\"I have knee pain\"** to get started!",
         state
       );
   }
