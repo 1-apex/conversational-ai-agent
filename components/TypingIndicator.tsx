@@ -4,7 +4,7 @@ export default function TypingIndicator() {
   return (
     <div className="flex items-start gap-3 animate-fade-in">
       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-        K
+        C
       </div>
       <div className="glass-panel rounded-2xl rounded-tl-md px-4 py-3">
         <div className="flex gap-1.5">
