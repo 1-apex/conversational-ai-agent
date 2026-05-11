@@ -4,9 +4,7 @@ import { useState, useRef, useEffect } from "react";
 
 // SpeechRecognition and its event types are absent from some TS DOM lib
 // versions — declare the minimal surface area we actually use.
-interface SRAlternative {
-  readonly transcript: string;
-}
+interface SRAlternative { readonly transcript: string; }
 interface SRResult {
   readonly isFinal: boolean;
   readonly length: number;
@@ -16,9 +14,7 @@ interface SRResultList {
   readonly length: number;
   readonly [index: number]: SRResult;
 }
-interface SREvent extends Event {
-  readonly results: SRResultList;
-}
+interface SREvent extends Event { readonly results: SRResultList; }
 interface SpeechRecognitionInstance {
   continuous: boolean;
   interimResults: boolean;
@@ -30,9 +26,7 @@ interface SpeechRecognitionInstance {
   stop: () => void;
   abort: () => void;
 }
-
 type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
-
 type WindowWithSpeech = Window & {
   SpeechRecognition?: SpeechRecognitionCtor;
   webkitSpeechRecognition?: SpeechRecognitionCtor;
@@ -41,9 +35,14 @@ type WindowWithSpeech = Window & {
 interface Props {
   onSend: (message: string) => void;
   disabled?: boolean;
+  /** True while ChatWindow's TTS is playing — mic should not run concurrently. */
+  isSpeaking?: boolean;
+  /** ChatWindow passes its ref here; we write startListening() into it so
+   *  ChatWindow can reopen the mic after TTS ends in hands-free mode. */
+  listenTriggerRef?: { current: (() => void) | null };
 }
 
-export default function ChatInput({ onSend, disabled }: Props) {
+export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerRef }: Props) {
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -51,15 +50,20 @@ export default function ChatInput({ onSend, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  // Keep a ref to onSend so the recognition handler always calls the latest
-  // version without needing to re-create the SpeechRecognition instance.
+  // Ref-mirrored version of isListening so callbacks can read current state
+  // without capturing stale closure values.
+  const isListeningRef = useRef(false);
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+
+  // Keep onSend current without re-creating the recognition instance.
   const onSendRef = useRef(onSend);
   useEffect(() => { onSendRef.current = onSend; }, [onSend]);
 
   // Holds the final transcript between isFinal result and the auto-send
-  // timeout, so we can cancel it if the user clicks Stop before it fires.
+  // timeout, so it can be cancelled if the user clicks Stop first.
   const pendingRef = useRef("");
 
+  // ── Recognition setup (runs once) ──────────────────────────────────────
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -75,18 +79,16 @@ export default function ChatInput({ onSend, disabled }: Props) {
     rec.lang = "en-US";
 
     rec.onresult = (event: SREvent) => {
-      // Build full transcript from all result fragments
       let transcript = "";
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
-
       setInput(transcript);
 
       if (event.results[event.results.length - 1].isFinal) {
         const final = transcript.trim();
         pendingRef.current = final;
-        // 400 ms pause so the user can see what was captured before it sends
+        // 400 ms so the user can see what was captured before it sends
         setTimeout(() => {
           if (pendingRef.current) {
             onSendRef.current(pendingRef.current);
@@ -97,18 +99,57 @@ export default function ChatInput({ onSend, disabled }: Props) {
       }
     };
 
-    rec.onend = () => setIsListening(false);
+    rec.onend = () => {
+      setIsListening(false);
+      isListeningRef.current = false;
+    };
 
     rec.onerror = () => {
       setIsListening(false);
+      isListeningRef.current = false;
       pendingRef.current = "";
     };
 
     recognitionRef.current = rec;
 
-    return () => rec.abort();
+    // Expose startListening so ChatWindow can reopen the mic after TTS ends
+    if (listenTriggerRef) {
+      listenTriggerRef.current = () => {
+        if (!isListeningRef.current && recognitionRef.current) {
+          setInput("");
+          pendingRef.current = "";
+          recognitionRef.current.start();
+          setIsListening(true);
+          isListeningRef.current = true;
+        }
+      };
+    }
+
+    return () => {
+      rec.abort();
+      if (listenTriggerRef) listenTriggerRef.current = null;
+    };
+  // listenTriggerRef is a stable ref object — effectively runs once
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Stop mic when TTS starts (prevents feedback loop) ──────────────────
+  useEffect(() => {
+    if (isSpeaking && isListeningRef.current) {
+      recognitionRef.current?.stop();
+      pendingRef.current = "";
+    }
+  }, [isSpeaking]);
+
+  // ── Stop mic when input is disabled (assistant is processing) ──────────
+  useEffect(() => {
+    if (disabled && isListeningRef.current) {
+      recognitionRef.current?.stop();
+      pendingRef.current = "";
+    }
+  }, [disabled]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || disabled) return;
@@ -118,7 +159,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
   };
 
   const toggleListening = () => {
-    if (!recognitionRef.current || disabled) return;
+    if (!recognitionRef.current || disabled || isSpeaking) return;
     if (isListening) {
       recognitionRef.current.stop();
       pendingRef.current = "";
@@ -127,8 +168,11 @@ export default function ChatInput({ onSend, disabled }: Props) {
       pendingRef.current = "";
       recognitionRef.current.start();
       setIsListening(true);
+      isListeningRef.current = true;
     }
   };
+
+  const micDisabled = disabled || isSpeaking;
 
   return (
     <div className="glass-panel border-t border-white/20 p-4">
@@ -139,7 +183,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder={isListening ? "Listening…" : "Type your message…"}
+          placeholder={isListening ? "Listening…" : isSpeaking ? "Assistant is speaking…" : "Type your message…"}
           disabled={disabled}
           maxLength={500}
           aria-label="Chat message"
@@ -150,15 +194,22 @@ export default function ChatInput({ onSend, disabled }: Props) {
           }`}
         />
 
+        {/* Microphone button — hidden on unsupported browsers */}
         {speechSupported && (
           <button
             type="button"
             onClick={toggleListening}
-            disabled={disabled}
+            disabled={micDisabled}
             aria-label={isListening ? "Stop recording" : "Record voice message"}
             aria-pressed={isListening}
-            title={isListening ? "Stop recording" : "Speak your message"}
-            className={`flex items-center justify-center w-12 h-12 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${
+            title={
+              isSpeaking
+                ? "Wait for the assistant to finish speaking"
+                : isListening
+                ? "Stop recording"
+                : "Speak your message"
+            }
+            className={`flex items-center justify-center w-12 h-12 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ${
               isListening
                 ? "bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse"
                 : "bg-white/60 border border-white/30 text-gray-500 hover:bg-white/80 hover:text-teal-600"
@@ -199,9 +250,15 @@ export default function ChatInput({ onSend, disabled }: Props) {
         </button>
       </div>
 
+      {/* Status hint below the input row */}
       {isListening && (
         <p className="max-w-3xl mx-auto mt-2 text-xs text-red-500 text-center animate-fade-in">
           Listening — speak now, or click stop to cancel.
+        </p>
+      )}
+      {isSpeaking && !isListening && (
+        <p className="max-w-3xl mx-auto mt-2 text-xs text-teal-600 text-center animate-fade-in">
+          Assistant is speaking — mic will open automatically when done.
         </p>
       )}
     </div>

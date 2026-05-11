@@ -36,6 +36,35 @@ body {
   animation: fade-in 0.3s ease-out both;
 }
 
+/* ── Speaking waveform ───────────────────────── */
+.waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+
+.waveform span {
+  display: block;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(to top, #14b8a6, #06b6d4);
+  border-radius: 2px;
+  transform: scaleY(0.3);
+  transform-origin: bottom;
+  animation: waveform-bar 0.9s ease-in-out infinite;
+}
+
+.waveform span:nth-child(1) { animation-delay: 0ms; }
+.waveform span:nth-child(2) { animation-delay: 160ms; }
+.waveform span:nth-child(3) { animation-delay: 320ms; }
+.waveform span:nth-child(4) { animation-delay: 480ms; }
+
+@keyframes waveform-bar {
+  0%, 100% { transform: scaleY(0.25); }
+  50%       { transform: scaleY(1); }
+}
+
 /* ── Scrollbar ───────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
