@@ -64,3 +64,37 @@ export interface ChatResponse {
   conversationState: ConversationState;
 }
 
+// ── Call Intelligence ─────────────────────────────────────────────────────
+
+export type CallStatus = "idle" | "active" | "ending" | "done";
+
+export interface EntityMap {
+  names: string[];
+  companies: string[];
+  products: string[];
+  emails: string[];
+  phones: string[];
+  dates: string[];
+  prices: string[];
+}
+
+export interface TranscriptTurn {
+  id: string;
+  speaker: "agent" | "prospect";
+  text: string;
+  timestamp: number;
+  entities: EntityMap;
+}
+
+export interface CallBriefData {
+  summary: string;
+  entities: {
+    names: string[];
+    companies: string[];
+    products: string[];
+    contacts: string[];
+  };
+  actionItems: string[];
+  duration: number;
+}
+

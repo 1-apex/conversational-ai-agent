@@ -36,6 +36,38 @@ body {
   animation: fade-in 0.3s ease-out both;
 }
 
+/* ── 3D Cube ─────────────────────────────────── */
+.cube-scene {
+  perspective: 600px;
+  width: 180px;
+  height: 180px;
+}
+
+.cube {
+  width: 180px;
+  height: 180px;
+  position: relative;
+  transform-style: preserve-3d;
+  /* transform set entirely via JS for full control */
+}
+
+.cube-face {
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  background: rgba(20, 184, 166, 0.07);
+  border: 1px solid rgba(20, 184, 166, 0.22);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.cube-face--front  { transform: rotateY(  0deg) translateZ(90px); }
+.cube-face--back   { transform: rotateY(180deg) translateZ(90px); }
+.cube-face--left   { transform: rotateY(-90deg) translateZ(90px); }
+.cube-face--right  { transform: rotateY( 90deg) translateZ(90px); }
+.cube-face--top    { transform: rotateX( 90deg) translateZ(90px); }
+.cube-face--bottom { transform: rotateX(-90deg) translateZ(90px); }
+
 /* ── Speaking waveform ───────────────────────── */
 .waveform {
   display: flex;

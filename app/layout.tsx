@@ -8,9 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "CareLink — AI Scheduling Assistant",
-  description:
-    "Book appointments with CareLink specialists using our AI-powered scheduling assistant.",
+  title: "CareLink — Call Intelligence",
+  description: "Real-time call transcription, entity extraction, and AI-generated call briefs.",
 };
 
 export default function RootLayout({
