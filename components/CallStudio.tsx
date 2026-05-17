@@ -37,7 +37,6 @@ export default function CallStudio() {
   const [interimText, setInterimText]     = useState("");
   const [currentSpeaker, setCurrentSpeaker] = useState<"agent" | "prospect">("agent");
   const [allEntities, setAllEntities]     = useState<EntityMap>(EMPTY_ENTITY_MAP);
-  const [volume, setVolume]               = useState(0);
   const [elapsed, setElapsed]             = useState(0);
   const [brief, setBrief]                 = useState<CallBriefData | null>(null);
   const [briefError, setBriefError]       = useState("");
@@ -52,47 +51,11 @@ export default function CallStudio() {
 
   // Infrastructure refs
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const audioCtxRef    = useRef<AudioContext | null>(null);
-  const analyserRef    = useRef<AnalyserNode | null>(null);
-  const streamRef      = useRef<MediaStream | null>(null);
-  const audioRafRef    = useRef<number>(0);
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef   = useRef(0);
 
   useEffect(() => { currentSpeakerRef.current = currentSpeaker; }, [currentSpeaker]);
   useEffect(() => { turnsRef.current = turns; }, [turns]);
-
-  // ── Audio volume analyser ────────────────────────────────────────────────
-  const startAudio = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      streamRef.current = stream;
-      const ctx = new AudioContext();
-      audioCtxRef.current = ctx;
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 64;
-      analyserRef.current = analyser;
-      ctx.createMediaStreamSource(stream).connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteFrequencyData(data);
-        const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        setVolume(Math.min(avg / 80, 1));
-        audioRafRef.current = requestAnimationFrame(tick);
-      };
-      tick();
-    } catch { /* mic denied — cube just stays at rest */ }
-  }, []);
-
-  const stopAudio = useCallback(() => {
-    cancelAnimationFrame(audioRafRef.current);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    audioCtxRef.current?.close();
-    audioCtxRef.current = null;
-    analyserRef.current = null;
-    setVolume(0);
-  }, []);
 
   // ── SpeechRecognition ────────────────────────────────────────────────────
   const startRecognition = useCallback(() => {
@@ -174,9 +137,8 @@ export default function CallStudio() {
       1000
     );
 
-    await startAudio();
     startRecognition();
-  }, [startAudio, startRecognition]);
+  }, [startRecognition]);
 
   const endCall = useCallback(async () => {
     isActiveRef.current = false;
@@ -186,7 +148,6 @@ export default function CallStudio() {
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
     stopRecognition();
-    stopAudio();
 
     // Read from ref — avoids putting fetch inside a setState callback,
     // which React StrictMode double-invokes and causes duplicate API calls
@@ -206,7 +167,7 @@ export default function CallStudio() {
       setBriefError(err instanceof Error ? err.message : "Extraction failed");
       setStatus("done");
     }
-  }, [stopAudio, stopRecognition]);
+  }, [stopRecognition]);
 
   const handleNewCall = useCallback(() => {
     setBrief(null);
@@ -221,9 +182,8 @@ export default function CallStudio() {
   useEffect(() => () => {
     isActiveRef.current = false;
     stopRecognition();
-    stopAudio();
     if (timerRef.current) clearInterval(timerRef.current);
-  }, [stopAudio, stopRecognition]);
+  }, [stopRecognition]);
 
   const isEnding = status === "ending";
 
@@ -233,7 +193,7 @@ export default function CallStudio() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="glass-panel border-b border-white/20 px-6 py-3.5 shrink-0">
         <div className="max-w-6xl mx-auto flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+          <div className="w-9 h-9 rounded-full bg-linear-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
             C
           </div>
           <div>
@@ -284,7 +244,7 @@ export default function CallStudio() {
 
         {/* Left — Cube */}
         <div className="w-2/5 flex flex-col items-center justify-center gap-6 p-8 border-r border-white/20">
-          <CubePulse isActive={status === "active"} volume={volume} />
+          <CubePulse isActive={status === "active"} />
 
           {/* Status text under cube */}
           <div className="text-center space-y-1">
@@ -305,7 +265,7 @@ export default function CallStudio() {
             {status === "idle" && (
               <button
                 onClick={startCall}
-                className="mt-4 px-8 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-medium text-sm hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25 active:scale-95"
+                className="mt-4 px-8 py-3 bg-linear-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-medium text-sm hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25 active:scale-95"
               >
                 Start Call
               </button>
@@ -353,7 +313,7 @@ export default function CallStudio() {
               aria-pressed={currentSpeaker === "agent"}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                 currentSpeaker === "agent"
-                  ? "bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/25"
+                  ? "bg-linear-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/25"
                   : "glass-panel text-gray-500 border border-white/30 hover:border-teal-400/40"
               }`}
             >
@@ -366,7 +326,7 @@ export default function CallStudio() {
               aria-pressed={currentSpeaker === "prospect"}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                 currentSpeaker === "prospect"
-                  ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-md shadow-violet-500/25"
+                  ? "bg-linear-to-r from-violet-500 to-purple-600 text-white shadow-md shadow-violet-500/25"
                   : "glass-panel text-gray-500 border border-white/30 hover:border-violet-400/40"
               }`}
             >
