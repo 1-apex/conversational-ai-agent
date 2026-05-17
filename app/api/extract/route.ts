@@ -28,12 +28,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(brief);
     }
 
-    // GROQ: uncomment when GROQ_API_KEY is in .env
-    // if (process.env.GROQ_API_KEY) {
-    //   const { extractWithGroq } = await import("@/lib/groq-client");
-    //   const brief = await extractWithGroq(castedTurns, secs);
-    //   return NextResponse.json(brief);
-    // }
+    if (process.env.GROQ_API_KEY ?? process.env.GROK_API) {
+      const { extractWithGroq } = await import("@/lib/groq-client");
+      const brief = await extractWithGroq(castedTurns, secs);
+      return NextResponse.json(brief);
+    }
 
     // GEMINI: uncomment when GEMINI_API_KEY is in .env
     // if (process.env.GEMINI_API_KEY) {
