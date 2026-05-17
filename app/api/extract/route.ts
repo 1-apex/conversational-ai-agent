@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(brief);
     }
 
-    if (process.env.GROQ_API_KEY ?? process.env.GROK_API) {
+    if (process.env.GROQ_API_KEY) {
       const { extractWithGroq } = await import("@/lib/groq-client");
       const brief = await extractWithGroq(castedTurns, secs);
       return NextResponse.json(brief);

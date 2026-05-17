@@ -3,22 +3,12 @@ import { TranscriptTurn, CallBriefData } from "./types";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "llama-3.3-70b-versatile";
 
-const SYSTEM_PROMPT = `You are a call intelligence assistant. Analyze business call transcripts and extract structured information.
-
-Given a transcript with [Agent] and [Prospect] labels, return ONLY a valid JSON object — no markdown, no explanation — with this exact shape:
-
-{
-  "summary": "2-3 sentence summary of what was discussed and the outcome",
-  "entities": {
-    "names": ["person names mentioned"],
-    "companies": ["company or organization names"],
-    "products": ["products, services, tools, or platforms mentioned"],
-    "contacts": ["email addresses or phone numbers"]
-  },
-  "actionItems": ["each next step or follow-up as a single clear sentence"]
-}
-
-If a field has no data, return an empty array. Never add extra keys.`;
+// Kept intentionally short — every extra word here costs tokens on every call
+const SYSTEM_PROMPT =
+  `Analyze this call transcript (A=Agent, P=Prospect). ` +
+  `Return ONLY valid JSON, no markdown, no explanation:\n` +
+  `{"summary":"2-3 sentences","entities":{"names":[],"companies":[],"products":[],"contacts":[]},"actionItems":[]}\n` +
+  `Empty array when nothing found. actionItems = next steps only.`;
 
 interface GroqResponse {
   choices: { message: { content: string } }[];
@@ -38,23 +28,24 @@ export async function extractWithGroq(
   turns: TranscriptTurn[],
   durationSeconds: number
 ): Promise<CallBriefData> {
+  // "A:" / "P:" instead of "[Agent]:" / "[Prospect]:" — saves ~10 chars per turn
   const transcript = turns
-    .map((t) => `[${t.speaker === "agent" ? "Agent" : "Prospect"}]: ${t.text}`)
+    .map((t) => `${t.speaker === "agent" ? "A" : "P"}: ${t.text}`)
     .join("\n");
 
   const res = await fetch(GROQ_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      // Accept both spellings — .env has GROK_API, standard is GROQ_API_KEY
-      Authorization: `Bearer ${process.env.GROQ_API_KEY ?? process.env.GROK_API}`,
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
       model: MODEL,
       temperature: 0,
+      max_tokens: 512,  // JSON output is always small; cap prevents runaway spend
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user",   content: `Transcript:\n\n${transcript}` },
+        { role: "user",   content: transcript },
       ],
     }),
   });
@@ -65,7 +56,6 @@ export async function extractWithGroq(
   }
 
   const data = (await res.json()) as GroqResponse;
-  const text = data.choices[0].message.content;
-  const parsed = parseJSON(text);
+  const parsed = parseJSON(data.choices[0].message.content);
   return { ...parsed, duration: durationSeconds };
 }

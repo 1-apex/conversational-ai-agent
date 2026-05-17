@@ -46,6 +46,9 @@ export default function CallStudio() {
   const currentSpeakerRef = useRef<"agent" | "prospect">("agent");
   const isActiveRef        = useRef(false);
   const lastFinalIdxRef    = useRef(-1);
+  // Mirror of turns state — lets endCall read the current list without
+  // putting a fetch inside a setState callback (which StrictMode double-invokes)
+  const turnsRef           = useRef<TranscriptTurn[]>([]);
 
   // Infrastructure refs
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
@@ -57,6 +60,7 @@ export default function CallStudio() {
   const startTimeRef   = useRef(0);
 
   useEffect(() => { currentSpeakerRef.current = currentSpeaker; }, [currentSpeaker]);
+  useEffect(() => { turnsRef.current = turns; }, [turns]);
 
   // ── Audio volume analyser ────────────────────────────────────────────────
   const startAudio = useCallback(async () => {
@@ -178,33 +182,30 @@ export default function CallStudio() {
     isActiveRef.current = false;
     setStatus("ending");
 
-    // Freeze timer
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
     stopRecognition();
     stopAudio();
 
-    // Snapshot turns synchronously; state update is async
-    setTurns((prev) => {
-      void (async () => {
-        try {
-          const res = await fetch("/api/extract", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ turns: prev, duration }),
-          });
-          if (!res.ok) throw new Error(await res.text());
-          const data = (await res.json()) as CallBriefData;
-          setBrief(data);
-          setStatus("done");
-        } catch (err) {
-          setBriefError(err instanceof Error ? err.message : "Extraction failed");
-          setStatus("done");
-        }
-      })();
-      return prev;
-    });
+    // Read from ref — avoids putting fetch inside a setState callback,
+    // which React StrictMode double-invokes and causes duplicate API calls
+    const currentTurns = turnsRef.current;
+
+    try {
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turns: currentTurns, duration }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as CallBriefData;
+      setBrief(data);
+      setStatus("done");
+    } catch (err) {
+      setBriefError(err instanceof Error ? err.message : "Extraction failed");
+      setStatus("done");
+    }
   }, [stopAudio, stopRecognition]);
 
   const handleNewCall = useCallback(() => {
@@ -327,7 +328,7 @@ export default function CallStudio() {
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">
                 <div className="waveform"><span /><span /><span /><span /></div>
-                <p className="text-sm text-gray-500">Analyzing transcript with Claude…</p>
+                <p className="text-sm text-gray-500">Analyzing transcript…</p>
               </div>
             </div>
           ) : (
