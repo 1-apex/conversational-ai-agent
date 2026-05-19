@@ -1,13 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CallStatus, TranscriptTurn, EntityMap, CallBriefData } from "@/lib/types";
-import { extractEntities, mergeEntities, EMPTY_ENTITY_MAP } from "@/lib/entity-extractor";
+import {
+  CallStatus, AgentName, AgentState, AgentTurn, AgentApiResponse, CallBriefData,
+} from "@/lib/types";
+import { EMPTY_ENTITY_MAP } from "@/lib/entity-extractor";
+import { AGENT_META } from "./AgentBadge";
+import AgentBadge from "./AgentBadge";
+import AgentTranscript from "./AgentTranscript";
 import CubePulse from "./CubePulse";
-import TranscriptPanel from "./TranscriptPanel";
 import CallBrief from "./CallBrief";
 
-// ── SpeechRecognition local types (absent from some TS DOM lib versions) ──
+// ── SpeechRecognition type declarations ───────────────────────────────────
 interface SRAlternative { readonly transcript: string; }
 interface SRResult { readonly isFinal: boolean; readonly length: number; readonly [i: number]: SRAlternative; }
 interface SRResultList { readonly length: number; readonly [i: number]: SRResult; }
@@ -25,251 +29,365 @@ type WindowWithSpeech = Window & {
   webkitSpeechRecognition?: SpeechRecognitionCtor;
 };
 
+// ── TTS voice config per agent ────────────────────────────────────────────
+const VOICE_CONFIG: Record<AgentName, { rate: number; pitch: number; voiceIndex: number }> = {
+  orchestrator: { rate: 1.00, pitch: 1.00, voiceIndex: 0 },
+  sales:        { rate: 1.05, pitch: 1.06, voiceIndex: 1 },
+  product:      { rate: 0.95, pitch: 0.88, voiceIndex: 2 },
+  general:      { rate: 1.00, pitch: 1.10, voiceIndex: 3 },
+  b2b:          { rate: 0.93, pitch: 0.82, voiceIndex: 4 },
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 function genId() { return Math.random().toString(36).substring(2, 10); }
 function fmtTime(s: number) {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
+function toSpeakable(text: string) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/[^\x00-\xFFFF]/g, " ")
+    .replace(/\n+/g, ". ")
+    .replace(/\.\s*\.\s*/g, ". ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 export default function CallStudio() {
-  const [status, setStatus]               = useState<CallStatus>("idle");
-  const [turns, setTurns]                 = useState<TranscriptTurn[]>([]);
-  const [interimText, setInterimText]     = useState("");
-  const [currentSpeaker, setCurrentSpeaker] = useState<"agent" | "prospect">("agent");
-  const [allEntities, setAllEntities]     = useState<EntityMap>(EMPTY_ENTITY_MAP);
-  const [elapsed, setElapsed]             = useState(0);
-  const [brief, setBrief]                 = useState<CallBriefData | null>(null);
-  const [briefError, setBriefError]       = useState("");
+  const [status,       setStatus]       = useState<CallStatus>("idle");
+  const [agentState,   setAgentState]   = useState<AgentState>("idle");
+  const [activeAgent,  setActiveAgent]  = useState<AgentName>("orchestrator");
+  const [turns,        setTurns]        = useState<AgentTurn[]>([]);
+  const [interimText,  setInterimText]  = useState("");
+  const [elapsed,      setElapsed]      = useState(0);
+  const [brief,        setBrief]        = useState<CallBriefData | null>(null);
+  const [briefError,   setBriefError]   = useState("");
 
-  // Stable refs for values read inside callbacks
-  const currentSpeakerRef = useRef<"agent" | "prospect">("agent");
-  const isActiveRef        = useRef(false);
-  const lastFinalIdxRef    = useRef(-1);
-  // Mirror of turns state — lets endCall read the current list without
-  // putting a fetch inside a setState callback (which StrictMode double-invokes)
-  const turnsRef           = useRef<TranscriptTurn[]>([]);
+  // Refs for async-safe access
+  const isActiveRef     = useRef(false);
+  const agentStateRef   = useRef<AgentState>("idle");
+  const activeAgentRef  = useRef<AgentName>("orchestrator");
+  const turnsRef        = useRef<AgentTurn[]>([]);
+  const finalTextRef    = useRef("");
+  const startTimeRef    = useRef(0);
+  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef  = useRef<SpeechRecognitionInstance | null>(null);
+  const synthRef        = useRef<SpeechSynthesis | null>(null);
+  const voicesRef       = useRef<SpeechSynthesisVoice[]>([]);
 
-  // Infrastructure refs
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef   = useRef(0);
+  // Sync state → refs
+  useEffect(() => { agentStateRef.current  = agentState;  }, [agentState]);
+  useEffect(() => { activeAgentRef.current = activeAgent; }, [activeAgent]);
+  useEffect(() => { turnsRef.current       = turns;       }, [turns]);
 
-  useEffect(() => { currentSpeakerRef.current = currentSpeaker; }, [currentSpeaker]);
-  useEffect(() => { turnsRef.current = turns; }, [turns]);
+  // ── TTS: speak a reply as the given agent ──────────────────────────────
+  const speak = useCallback((text: string, agent: AgentName) => {
+    if (!synthRef.current) return;
+    synthRef.current.cancel();
 
-  // ── SpeechRecognition ────────────────────────────────────────────────────
-  const startRecognition = useCallback(() => {
+    const utterance = new SpeechSynthesisUtterance(toSpeakable(text));
+    const cfg = VOICE_CONFIG[agent];
+    utterance.rate   = cfg.rate;
+    utterance.pitch  = cfg.pitch;
+    utterance.volume = 1;
+
+    // Assign a different English voice per agent when available
+    const enVoices = voicesRef.current.filter((v) => v.lang.startsWith("en"));
+    if (enVoices.length > 0) {
+      utterance.voice = enVoices[cfg.voiceIndex % enVoices.length];
+    }
+
+    setAgentState("speaking");
+    agentStateRef.current = "speaking";
+
+    utterance.onend = utterance.onerror = () => {
+      if (!isActiveRef.current) return;
+      setAgentState("listening");
+      agentStateRef.current = "listening";
+      startListening();
+    };
+
+    synthRef.current.speak(utterance);
+  }, []); // stable — reads from refs
+
+  // ── STT: listen for one user turn ──────────────────────────────────────
+  function startListening() {
+    if (!isActiveRef.current) return;
     const w = window as WindowWithSpeech;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) return;
 
+    finalTextRef.current = "";
+    setInterimText("");
+
     const rec = new Ctor();
-    rec.continuous = true;
+    rec.continuous     = false;
     rec.interimResults = true;
-    rec.lang = "en-US";
+    rec.lang           = "en-US";
 
     rec.onresult = (event: SREvent) => {
-      // Process any newly-finalized results
-      for (let i = lastFinalIdxRef.current + 1; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          const text = event.results[i][0].transcript.trim();
-          if (text) {
-            const entities = extractEntities(text);
-            const turn: TranscriptTurn = {
-              id: genId(),
-              speaker: currentSpeakerRef.current,
-              text,
-              timestamp: Date.now(),
-              entities,
-            };
-            setTurns((prev) => [...prev, turn]);
-            setAllEntities((prev) => mergeEntities(prev, entities));
-          }
-          lastFinalIdxRef.current = i;
-          setInterimText("");
-        }
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+      setInterimText(transcript);
+      if (event.results[event.results.length - 1].isFinal) {
+        finalTextRef.current = transcript.trim();
+        setInterimText("");
       }
-      // Show current interim (last result if not final)
-      const last = event.results[event.results.length - 1];
-      if (!last.isFinal) setInterimText(last[0].transcript);
     };
 
-    // Chrome stops continuous recognition silently — restart while active
     rec.onend = () => {
-      if (isActiveRef.current) {
-        try { rec.start(); } catch { /* already running */ }
+      recognitionRef.current = null;
+      const text = finalTextRef.current;
+      if (text && isActiveRef.current) {
+        finalTextRef.current = "";
+        callAgent(text);
+      } else if (isActiveRef.current && agentStateRef.current === "listening") {
+        // silence — restart listening after a short pause
+        setTimeout(() => {
+          if (isActiveRef.current && agentStateRef.current === "listening") startListening();
+        }, 400);
       }
     };
 
     rec.onerror = (event: Event) => {
       const e = event as Event & { error?: string };
-      if (e.error === "no-speech" && isActiveRef.current) {
-        try { rec.start(); } catch { /* */ }
+      if (e.error !== "aborted" && isActiveRef.current && agentStateRef.current === "listening") {
+        setTimeout(() => {
+          if (isActiveRef.current && agentStateRef.current === "listening") startListening();
+        }, 400);
       }
     };
 
     recognitionRef.current = rec;
-    try { rec.start(); } catch { /* */ }
-  }, []);
+    try { rec.start(); } catch { /* already started */ }
+  }
 
-  const stopRecognition = useCallback(() => {
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
-    setInterimText("");
-  }, []);
+  // ── Core agent call ────────────────────────────────────────────────────
+  const callAgent = useCallback(async (userInput: string) => {
+    if (!isActiveRef.current) return;
 
-  // ── Call lifecycle ────────────────────────────────────────────────────────
+    // Add user turn to history (skip on greeting trigger)
+    let snapshot = turnsRef.current;
+    if (userInput) {
+      const userTurn: AgentTurn = { id: genId(), role: "user", content: userInput, timestamp: Date.now() };
+      snapshot = [...snapshot, userTurn];
+      setTurns(snapshot);
+      turnsRef.current = snapshot;
+    }
+
+    setAgentState("thinking");
+    agentStateRef.current = "thinking";
+
+    try {
+      const res = await fetch("/api/agent", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          history:      snapshot,
+          userInput,
+          currentAgent: activeAgentRef.current,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as AgentApiResponse;
+
+      // Switch agent if handoff requested
+      const effectiveAgent = data.handoff ?? data.agent;
+      if (effectiveAgent !== activeAgentRef.current) {
+        setActiveAgent(effectiveAgent);
+        activeAgentRef.current = effectiveAgent;
+      }
+
+      // Add agent turn
+      const agentTurn: AgentTurn = {
+        id: genId(), role: "agent", content: data.reply,
+        agent: effectiveAgent, timestamp: Date.now(),
+      };
+      const withAgent = [...turnsRef.current, agentTurn];
+      setTurns(withAgent);
+      turnsRef.current = withAgent;
+
+      speak(data.reply, effectiveAgent);
+    } catch (err) {
+      console.error("Agent call failed:", err);
+      // recover — open mic again
+      setAgentState("listening");
+      agentStateRef.current = "listening";
+      startListening();
+    }
+  }, [speak]);
+
+  // ── Call lifecycle ─────────────────────────────────────────────────────
   const startCall = useCallback(async () => {
-    setTurns([]);
-    setAllEntities(EMPTY_ENTITY_MAP);
-    setInterimText("");
-    setBrief(null);
-    setBriefError("");
-    setElapsed(0);
-    setCurrentSpeaker("agent");
-    lastFinalIdxRef.current = -1;
+    // Reset
+    setTurns([]);           turnsRef.current       = [];
+    setActiveAgent("orchestrator"); activeAgentRef.current = "orchestrator";
+    setBrief(null);         setBriefError("");
+    setElapsed(0);          finalTextRef.current   = "";
+
     isActiveRef.current = true;
     setStatus("active");
+    setAgentState("thinking");
+    agentStateRef.current = "thinking";
 
+    // Timer
     startTimeRef.current = Date.now();
     timerRef.current = setInterval(
       () => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)),
       1000
     );
 
-    startRecognition();
-  }, [startRecognition]);
+    // Init TTS
+    synthRef.current = window.speechSynthesis;
+    const existing = synthRef.current.getVoices();
+    if (existing.length > 0) {
+      voicesRef.current = existing;
+    } else {
+      await new Promise<void>((resolve) => {
+        const h = () => { voicesRef.current = synthRef.current!.getVoices(); resolve(); };
+        synthRef.current!.addEventListener("voiceschanged", h, { once: true });
+        setTimeout(resolve, 1200);
+      });
+    }
+
+    // Trigger greeting
+    await callAgent("");
+  }, [callAgent]);
 
   const endCall = useCallback(async () => {
     isActiveRef.current = false;
+    setAgentState("idle");
+    agentStateRef.current = "idle";
     setStatus("ending");
 
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
-    stopRecognition();
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    synthRef.current?.cancel();
+    setInterimText("");
 
-    // Read from ref — avoids putting fetch inside a setState callback,
-    // which React StrictMode double-invokes and causes duplicate API calls
     const currentTurns = turnsRef.current;
+
+    // Convert AgentTurn[] to TranscriptTurn format for the brief endpoint
+    const briefTurns = currentTurns.map((t) => ({
+      id: t.id, speaker: t.role === "agent" ? "agent" : "prospect" as "agent" | "prospect",
+      text: t.content, timestamp: t.timestamp, entities: EMPTY_ENTITY_MAP,
+    }));
 
     try {
       const res = await fetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turns: currentTurns, duration }),
+        body: JSON.stringify({ turns: briefTurns, duration }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as CallBriefData;
-      setBrief(data);
-      setStatus("done");
+      setBrief((await res.json()) as CallBriefData);
     } catch (err) {
-      setBriefError(err instanceof Error ? err.message : "Extraction failed");
-      setStatus("done");
+      setBriefError(err instanceof Error ? err.message : "Brief generation failed");
     }
-  }, [stopRecognition]);
+    setStatus("done");
+  }, []);
 
   const handleNewCall = useCallback(() => {
-    setBrief(null);
-    setBriefError("");
-    setTurns([]);
-    setAllEntities(EMPTY_ENTITY_MAP);
-    setElapsed(0);
-    setStatus("idle");
+    setStatus("idle");   setBrief(null);     setBriefError("");
+    setTurns([]);        setElapsed(0);      setActiveAgent("orchestrator");
+    setAgentState("idle");
   }, []);
 
   // Cleanup on unmount
   useEffect(() => () => {
     isActiveRef.current = false;
-    stopRecognition();
+    recognitionRef.current?.abort();
+    synthRef.current?.cancel();
     if (timerRef.current) clearInterval(timerRef.current);
-  }, [stopRecognition]);
+  }, []);
 
-  const isEnding = status === "ending";
+  const agentMeta = AGENT_META[activeAgent];
+  const isEnding  = status === "ending";
 
   return (
     <div className="flex flex-col h-full">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="glass-panel border-b border-white/20 px-6 py-3.5 shrink-0">
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header className="glass-panel border-b border-white/20 px-6 py-3 shrink-0">
         <div className="max-w-6xl mx-auto flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-linear-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
-            C
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 transition-all ${agentMeta.dot}`}>
+            {activeAgent[0].toUpperCase()}
           </div>
           <div>
             <h1 className="text-base font-semibold text-gray-800 leading-tight">CareLink</h1>
-            <p className="text-[11px] text-gray-400">Call Intelligence</p>
+            <p className="text-[11px] text-gray-400">AI Call Agent — Inogen</p>
           </div>
 
-          <div className="ml-auto flex items-center gap-4">
-            {/* Timer */}
-            {(status === "active" || status === "ending" || status === "done") && (
-              <span className="font-mono text-sm text-gray-600 tabular-nums">
-                {fmtTime(elapsed)}
-              </span>
-            )}
+          {status === "active" && (
+            <AgentBadge agent={activeAgent} state={agentState} />
+          )}
 
-            {/* Status badge */}
+          <div className="ml-auto flex items-center gap-4">
+            {(status === "active" || status === "ending" || status === "done") && (
+              <span className="font-mono text-sm text-gray-600 tabular-nums">{fmtTime(elapsed)}</span>
+            )}
             {status === "active" && (
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-xs text-red-600 font-medium">Recording</span>
-              </div>
+              <>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-xs text-red-600 font-medium">Live</span>
+                </div>
+                <button
+                  onClick={endCall}
+                  className="text-xs px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all"
+                >
+                  End Call
+                </button>
+              </>
             )}
-            {status === "ending" && (
-              <span className="text-xs text-gray-400">Generating brief…</span>
-            )}
-            {status === "done" && (
+            {status === "ending" && <span className="text-xs text-gray-400">Generating brief…</span>}
+            {status === "done"   && (
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
                 <span className="text-xs text-emerald-600 font-medium">Brief ready</span>
               </div>
             )}
-
-            {/* End call button */}
-            {status === "active" && (
-              <button
-                onClick={endCall}
-                className="text-xs px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all"
-              >
-                End Call
-              </button>
-            )}
           </div>
         </div>
       </header>
 
-      {/* ── Body ────────────────────────────────────────────────────────────── */}
+      {/* ── Body ────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden max-w-6xl w-full mx-auto">
 
-        {/* Left — Cube */}
-        <div className="w-2/5 flex flex-col items-center justify-center gap-6 p-8 border-r border-white/20">
-          <CubePulse isActive={status === "active"} />
+        {/* Left — Sphere */}
+        <div className="w-2/5 flex flex-col items-center justify-center gap-5 p-8 border-r border-white/20">
+          <CubePulse agentState={agentState} />
 
-          {/* Status text under cube */}
-          <div className="text-center space-y-1">
+          <div className="text-center space-y-1.5">
             {status === "idle" && (
-              <p className="text-sm text-gray-500">Ready to record</p>
+              <>
+                <p className="text-sm text-gray-500">Agent ready</p>
+                <button
+                  onClick={startCall}
+                  className="mt-2 px-8 py-3 bg-linear-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-medium text-sm hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25 active:scale-95"
+                >
+                  Start Call
+                </button>
+              </>
             )}
             {status === "active" && (
-              <p className="text-sm text-teal-600 font-medium animate-pulse">Listening…</p>
+              <p className={`text-sm font-medium transition-all ${
+                agentState === "speaking"  ? "text-teal-600"
+              : agentState === "listening" ? "text-violet-600"
+              : "text-gray-400"
+              }`}>
+                {agentState === "thinking"  ? "Thinking…"
+               : agentState === "speaking"  ? `${AGENT_META[activeAgent].label} speaking…`
+               : agentState === "listening" ? "Listening…"
+               : ""}
+              </p>
             )}
-            {status === "ending" && (
-              <p className="text-sm text-gray-400">Processing call…</p>
-            )}
-            {status === "done" && (
-              <p className="text-sm text-gray-500">Call ended</p>
-            )}
-
-            {/* Start call button (idle only) */}
-            {status === "idle" && (
-              <button
-                onClick={startCall}
-                className="mt-4 px-8 py-3 bg-linear-to-r from-teal-500 to-cyan-500 text-white rounded-xl font-medium text-sm hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg shadow-teal-500/25 active:scale-95"
-              >
-                Start Call
-              </button>
-            )}
+            {status === "ending" && <p className="text-sm text-gray-400">Processing…</p>}
+            {status === "done"   && <p className="text-sm text-gray-500">Call ended</p>}
           </div>
         </div>
 
@@ -280,62 +398,25 @@ export default function CallStudio() {
           ) : status === "done" && briefError ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
               <p className="text-sm text-red-500">{briefError}</p>
-              <button onClick={handleNewCall} className="text-xs text-teal-600 underline">
-                Start a new call
-              </button>
+              <button onClick={handleNewCall} className="text-xs text-teal-600 underline">Start new call</button>
             </div>
           ) : isEnding ? (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">
                 <div className="waveform"><span /><span /><span /><span /></div>
-                <p className="text-sm text-gray-500">Analyzing transcript…</p>
+                <p className="text-sm text-gray-500">Analyzing conversation…</p>
               </div>
             </div>
           ) : (
-            <TranscriptPanel
+            <AgentTranscript
               turns={turns}
               interimText={interimText}
-              currentSpeaker={currentSpeaker}
-              allEntities={allEntities}
+              agentState={agentState}
+              activeAgent={activeAgent}
             />
           )}
         </div>
       </div>
-
-      {/* ── Footer — Speaker toggle (active only) ───────────────────────────── */}
-      {status === "active" && (
-        <footer className="glass-panel border-t border-white/20 px-6 py-3 shrink-0">
-          <div className="max-w-6xl mx-auto flex items-center justify-center gap-3">
-            <p className="text-xs text-gray-400 mr-2">Speaking as:</p>
-
-            <button
-              onClick={() => setCurrentSpeaker("agent")}
-              aria-pressed={currentSpeaker === "agent"}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                currentSpeaker === "agent"
-                  ? "bg-linear-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/25"
-                  : "glass-panel text-gray-500 border border-white/30 hover:border-teal-400/40"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${currentSpeaker === "agent" ? "bg-white" : "bg-teal-400"}`} />
-              Agent
-            </button>
-
-            <button
-              onClick={() => setCurrentSpeaker("prospect")}
-              aria-pressed={currentSpeaker === "prospect"}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                currentSpeaker === "prospect"
-                  ? "bg-linear-to-r from-violet-500 to-purple-600 text-white shadow-md shadow-violet-500/25"
-                  : "glass-panel text-gray-500 border border-white/30 hover:border-violet-400/40"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${currentSpeaker === "prospect" ? "bg-white" : "bg-violet-400"}`} />
-              Prospect
-            </button>
-          </div>
-        </footer>
-      )}
     </div>
   );
 }
