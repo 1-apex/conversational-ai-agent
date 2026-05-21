@@ -74,41 +74,82 @@ export default function CallStudio() {
   const recognitionRef  = useRef<SpeechRecognitionInstance | null>(null);
   const synthRef        = useRef<SpeechSynthesis | null>(null);
   const voicesRef       = useRef<SpeechSynthesisVoice[]>([]);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Sync state → refs
   useEffect(() => { agentStateRef.current  = agentState;  }, [agentState]);
   useEffect(() => { activeAgentRef.current = activeAgent; }, [activeAgent]);
   useEffect(() => { turnsRef.current       = turns;       }, [turns]);
 
-  // ── TTS: speak a reply as the given agent ──────────────────────────────
-  const speak = useCallback((text: string, agent: AgentName) => {
-    if (!synthRef.current) return;
-    synthRef.current.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(toSpeakable(text));
-    const cfg = VOICE_CONFIG[agent];
-    utterance.rate   = cfg.rate;
-    utterance.pitch  = cfg.pitch;
-    utterance.volume = 1;
-
-    // Assign a different English voice per agent when available
-    const enVoices = voicesRef.current.filter((v) => v.lang.startsWith("en"));
-    if (enVoices.length > 0) {
-      utterance.voice = enVoices[cfg.voiceIndex % enVoices.length];
+  // ── Stop any in-progress TTS immediately ──────────────────────────────
+  function mute() {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.src = "";
+      currentAudioRef.current = null;
     }
+    window.speechSynthesis?.cancel();
+  }
 
+  // ── Web Speech fallback (used when no ElevenLabs key is configured) ────
+  function webSpeechFallback(text: string, agent: AgentName, onEnd: () => void) {
+    const synth = window.speechSynthesis;
+    if (!synth) { onEnd(); return; }
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const cfg = VOICE_CONFIG[agent];
+    utterance.rate = cfg.rate; utterance.pitch = cfg.pitch; utterance.volume = 1;
+    const en = synth.getVoices().filter((v) => v.lang.startsWith("en"));
+    if (en.length > 0) utterance.voice = en[cfg.voiceIndex % en.length];
+    utterance.onend = utterance.onerror = onEnd;
+    synth.speak(utterance);
+  }
+
+  // ── TTS: try ElevenLabs first, fall back to Web Speech ─────────────────
+  const speak = useCallback(async (text: string, agent: AgentName) => {
+    mute();
     setAgentState("speaking");
     agentStateRef.current = "speaking";
 
-    utterance.onend = utterance.onerror = () => {
+    const cleaned = toSpeakable(text);
+    const onEnd = () => {
       if (!isActiveRef.current) return;
       setAgentState("listening");
       agentStateRef.current = "listening";
       startListening();
     };
 
-    synthRef.current.speak(utterance);
-  }, []); // stable — reads from refs
+    try {
+      const res = await fetch("/api/tts", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ text: cleaned, agent }),
+      });
+
+      if (res.status === 501) throw new Error("no-key"); // no ElevenLabs key → fall back
+      if (!res.ok) throw new Error(`tts-${res.status}`);
+
+      const blob  = await res.blob();
+      const url   = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      currentAudioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        onEnd();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        webSpeechFallback(cleaned, agent, onEnd);
+      };
+
+      await audio.play().catch(() => webSpeechFallback(cleaned, agent, onEnd));
+    } catch {
+      webSpeechFallback(cleaned, agent, onEnd);
+    }
+  }, []); // stable — reads state via refs
 
   // ── STT: listen for one user turn ──────────────────────────────────────
   function startListening() {
@@ -238,20 +279,17 @@ export default function CallStudio() {
       1000
     );
 
-    // Init TTS
-    synthRef.current = window.speechSynthesis;
-    const existing = synthRef.current.getVoices();
-    if (existing.length > 0) {
-      voicesRef.current = existing;
-    } else {
-      await new Promise<void>((resolve) => {
-        const h = () => { voicesRef.current = synthRef.current!.getVoices(); resolve(); };
-        synthRef.current!.addEventListener("voiceschanged", h, { once: true });
-        setTimeout(resolve, 1200);
-      });
+    // Pre-load Web Speech voices in the background (used as fallback only)
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      synthRef.current = window.speechSynthesis;
+      const v = synthRef.current.getVoices();
+      if (v.length > 0) voicesRef.current = v;
+      else synthRef.current.addEventListener("voiceschanged", () => {
+        voicesRef.current = synthRef.current?.getVoices() ?? [];
+      }, { once: true });
     }
 
-    // Trigger greeting
+    // Trigger greeting immediately — don't block on voice loading
     await callAgent("");
   }, [callAgent]);
 
@@ -264,9 +302,9 @@ export default function CallStudio() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
+    mute();
     recognitionRef.current?.abort();
     recognitionRef.current = null;
-    synthRef.current?.cancel();
     setInterimText("");
 
     const currentTurns = turnsRef.current;
@@ -300,8 +338,8 @@ export default function CallStudio() {
   // Cleanup on unmount
   useEffect(() => () => {
     isActiveRef.current = false;
+    mute();
     recognitionRef.current?.abort();
-    synthRef.current?.cancel();
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
