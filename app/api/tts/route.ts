@@ -17,12 +17,12 @@ export async function POST(req: NextRequest) {
     const client = new ElevenLabsClient({ apiKey });
     const stream = await client.textToSpeech.convert(VOICE_ID, {
       text: body.text,
-      model_id: "eleven_turbo_v2_5",
-      voice_settings: {
-        stability:         0.45,
-        similarity_boost:  0.75,
-        style:             0.35,
-        use_speaker_boost: true,
+      modelId: "eleven_turbo_v2_5",
+      voiceSettings: {
+        stability:        0.45,
+        similarityBoost:  0.75,
+        style:            0.35,
+        useSpeakerBoost:  true,
       },
     });
 

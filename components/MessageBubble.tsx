@@ -22,9 +22,10 @@ function renderContent(content: string) {
 
 interface Props {
   message: Message;
+  showCursor?: boolean;
 }
 
-export default function MessageBubble({ message }: Props) {
+export default function MessageBubble({ message, showCursor }: Props) {
   const isUser = message.role === "user";
 
   return (
@@ -49,6 +50,9 @@ export default function MessageBubble({ message }: Props) {
         }`}
       >
         {renderContent(message.content)}
+        {showCursor && (
+          <span className="inline-block w-0.5 h-[0.9em] bg-teal-500 ml-0.5 align-text-bottom rounded-sm animate-pulse" />
+        )}
       </div>
     </div>
   );

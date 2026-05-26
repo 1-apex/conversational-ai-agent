@@ -30,9 +30,13 @@ export default function ChatWindow() {
   const [isTyping, setIsTyping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [typingMsgId, setTypingMsgId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const animTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Stores full reply text so mute() can flush the partial message immediately
+  const pendingMsgRef = useRef<{ id: string; fullContent: string } | null>(null);
 
   // Slot ChatInput fills with its startListening() function.
   // ChatWindow calls it after TTS ends when voice mode is on.
@@ -60,18 +64,22 @@ export default function ChatWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function clearAnimTimer() {
+    if (animTimerRef.current) {
+      clearInterval(animTimerRef.current);
+      animTimerRef.current = null;
+    }
+  }
+
   function speak(text: string) {
     if (!synthRef.current) return;
-    synthRef.current.cancel(); // stop any previous utterance
+    synthRef.current.cancel();
 
     const utterance = new SpeechSynthesisUtterance(toSpeakable(text));
     utterance.rate = 1.05;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
-    // Prefer a natural English voice; Chrome loads voices asynchronously
-    // so getVoices() may return [] on the very first call — that's fine,
-    // the browser default voice is used and sounds natural enough.
     const voices = synthRef.current.getVoices();
     const preferred = voices.find(
       (v) =>
@@ -87,7 +95,6 @@ export default function ChatWindow() {
     utterance.onend = () => {
       setIsSpeaking(false);
       if (voiceModeRef.current) {
-        // 300 ms gap so the mic doesn't catch the tail of the audio
         setTimeout(() => listenTriggerRef.current?.(), 300);
       }
     };
@@ -96,8 +103,20 @@ export default function ChatWindow() {
     synthRef.current.speak(utterance);
   }
 
+  function flushPendingMsg() {
+    if (!pendingMsgRef.current) return;
+    const { id, fullContent } = pendingMsgRef.current;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, content: fullContent } : m))
+    );
+    pendingMsgRef.current = null;
+    clearAnimTimer();
+    setTypingMsgId(null);
+  }
+
   function mute() {
     synthRef.current?.cancel();
+    flushPendingMsg();
     setIsSpeaking(false);
   }
 
@@ -117,15 +136,33 @@ export default function ChatWindow() {
       // Simulate typing delay; remove this once a real LLM is wired in
       await new Promise((r) => setTimeout(r, 600 + Math.random() * 800));
 
-      const assistantMsg: Message = {
-        id: generateId(),
-        role: "assistant",
-        content: data.reply,
-        timestamp: Date.now(),
-      };
+      const msgId = generateId();
+      const words = data.reply.trim().split(/\s+/).filter(Boolean);
+      const msPerWord = Math.round(1000 / (2.5 * 1.05)); // ~380 ms, matches utterance.rate
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      // Start with empty content; timer fills it word by word
+      setMessages((prev) => [
+        ...prev,
+        { id: msgId, role: "assistant", content: "", timestamp: Date.now() },
+      ]);
       setConversationState(data.conversationState);
+      setTypingMsgId(msgId);
+      pendingMsgRef.current = { id: msgId, fullContent: data.reply };
+
+      let wordIdx = 0;
+      animTimerRef.current = setInterval(() => {
+        wordIdx++;
+        const partial = words.slice(0, wordIdx).join(" ");
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msgId ? { ...m, content: partial } : m))
+        );
+        if (wordIdx >= words.length) {
+          clearAnimTimer();
+          setTypingMsgId(null);
+          pendingMsgRef.current = null;
+        }
+      }, msPerWord);
+
       speak(data.reply);
     } catch (err) {
       console.error("Chat error:", err);
@@ -232,7 +269,11 @@ export default function ChatWindow() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
         <div className="max-w-3xl mx-auto space-y-4">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              showCursor={typingMsgId === msg.id}
+            />
           ))}
           {isTyping && <TypingIndicator />}
         </div>
