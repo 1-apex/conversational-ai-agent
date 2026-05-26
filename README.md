@@ -1,4 +1,4 @@
-# Kyron — Conversational AI Agent Platform
+# Conversational AI Agent Platform
 
 A Next.js application with two integrated AI products: **CareLink**, a medical appointment booking assistant, and **CallStudio**, a real-time call intelligence system with multi-agent routing.
 

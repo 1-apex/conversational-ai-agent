@@ -3,12 +3,13 @@ import { TranscriptTurn, CallBriefData } from "./types";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "llama-3.3-70b-versatile";
 
-// Kept intentionally short — every extra word here costs tokens on every call
 const SYSTEM_PROMPT =
-  `Analyze this call transcript (A=Agent, P=Prospect). ` +
-  `Return ONLY valid JSON, no markdown, no explanation:\n` +
-  `{"summary":"2-3 sentences","entities":{"names":[],"companies":[],"products":[],"contacts":[]},"actionItems":[]}\n` +
-  `Empty array when nothing found. actionItems = next steps only.`;
+  `You are analyzing a customer service call for Inogen (portable oxygen concentrators). A=Agent, P=Prospect/Customer.\n` +
+  `Return ONLY valid JSON, no markdown:\n` +
+  `{"summary":"3-4 sentences covering what the caller needed, what was discussed, and the outcome","sentiment":"positive|neutral|negative|frustrated","callOutcome":"resolved|follow_up_needed|interested|not_interested|transferred","entities":{"names":[],"companies":[],"products":[],"contacts":[]},"actionItems":[]}\n` +
+  `summary: be specific — mention products discussed, decisions made, next steps agreed.\n` +
+  `actionItems: concrete next steps with owner where known (e.g. "Agent: send prescription template", "Caller: check with doctor about flow setting").\n` +
+  `Empty arrays when nothing found.`;
 
 interface GroqResponse {
   choices: { message: { content: string } }[];
@@ -42,7 +43,7 @@ export async function extractWithGroq(
     body: JSON.stringify({
       model: MODEL,
       temperature: 0,
-      max_tokens: 512,  // JSON output is always small; cap prevents runaway spend
+      max_tokens: 700,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user",   content: transcript },
