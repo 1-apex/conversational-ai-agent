@@ -29,15 +29,6 @@ type WindowWithSpeech = Window & {
   webkitSpeechRecognition?: SpeechRecognitionCtor;
 };
 
-// ── TTS voice config per agent ────────────────────────────────────────────
-const VOICE_CONFIG: Record<AgentName, { rate: number; pitch: number; voiceIndex: number }> = {
-  orchestrator: { rate: 1.00, pitch: 1.00, voiceIndex: 0 },
-  sales:        { rate: 1.05, pitch: 1.06, voiceIndex: 1 },
-  product:      { rate: 0.95, pitch: 0.88, voiceIndex: 2 },
-  general:      { rate: 1.00, pitch: 1.10, voiceIndex: 3 },
-  b2b:          { rate: 0.93, pitch: 0.82, voiceIndex: 4 },
-};
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 function genId() { return Math.random().toString(36).substring(2, 10); }
 function fmtTime(s: number) {
@@ -64,17 +55,17 @@ export default function CallStudio() {
   const [briefError,   setBriefError]   = useState("");
 
   // Refs for async-safe access
-  const isActiveRef     = useRef(false);
-  const agentStateRef   = useRef<AgentState>("idle");
-  const activeAgentRef  = useRef<AgentName>("orchestrator");
-  const turnsRef        = useRef<AgentTurn[]>([]);
-  const finalTextRef    = useRef("");
-  const startTimeRef    = useRef(0);
-  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recognitionRef  = useRef<SpeechRecognitionInstance | null>(null);
-  const synthRef        = useRef<SpeechSynthesis | null>(null);
-  const voicesRef       = useRef<SpeechSynthesisVoice[]>([]);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const isActiveRef       = useRef(false);
+  const agentStateRef     = useRef<AgentState>("idle");
+  const activeAgentRef    = useRef<AgentName>("orchestrator");
+  const turnsRef          = useRef<AgentTurn[]>([]);
+  const finalTextRef      = useRef("");
+  const accumulatedTextRef = useRef("");
+  const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startTimeRef      = useRef(0);
+  const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef    = useRef<SpeechRecognitionInstance | null>(null);
+  const currentAudioRef   = useRef<HTMLAudioElement | null>(null);
 
   // Sync state → refs
   useEffect(() => { agentStateRef.current  = agentState;  }, [agentState]);
@@ -84,25 +75,39 @@ export default function CallStudio() {
   // ── Stop any in-progress TTS immediately ──────────────────────────────
   function mute() {
     if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.src = "";
+      const audio = currentAudioRef.current;
+      audio.onended = null; // prevent fallback triggering after forced stop
+      audio.onerror = null;
+      audio.pause();
+      audio.src = "";
       currentAudioRef.current = null;
     }
     window.speechSynthesis?.cancel();
   }
 
-  // ── Web Speech fallback (used when no ElevenLabs key is configured) ────
-  function webSpeechFallback(text: string, agent: AgentName, onEnd: () => void) {
+  // ── Web Speech fallback (ElevenLabs error recovery only) ─────────────────
+  function webSpeechFallback(text: string, onEnd: () => void) {
     const synth = window.speechSynthesis;
     if (!synth) { onEnd(); return; }
     synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    const cfg = VOICE_CONFIG[agent];
-    utterance.rate = cfg.rate; utterance.pitch = cfg.pitch; utterance.volume = 1;
-    const en = synth.getVoices().filter((v) => v.lang.startsWith("en"));
-    if (en.length > 0) utterance.voice = en[cfg.voiceIndex % en.length];
-    utterance.onend = utterance.onerror = onEnd;
-    synth.speak(utterance);
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.volume = 1;
+      const voices = synth.getVoices();
+      const voice =
+        voices.find((v) => v.default && v.lang.startsWith("en") && v.localService) ??
+        voices.find((v) => v.lang === "en-US" && v.localService) ??
+        voices.find((v) => v.lang.startsWith("en") && v.localService) ??
+        voices.find((v) => v.lang.startsWith("en"));
+      if (voice) utterance.voice = voice;
+      let fired = false;
+      const safeEnd = () => { if (!fired) { fired = true; onEnd(); } };
+      utterance.onend   = safeEnd;
+      utterance.onerror = safeEnd;
+      setTimeout(safeEnd, Math.max(6000, text.split(/\s+/).length * 380));
+      if (synth.paused) synth.resume();
+      synth.speak(utterance);
+    }, 50);
   }
 
   // ── TTS: try ElevenLabs first, fall back to Web Speech ─────────────────
@@ -142,16 +147,20 @@ export default function CallStudio() {
       audio.onerror = () => {
         URL.revokeObjectURL(url);
         if (currentAudioRef.current === audio) currentAudioRef.current = null;
-        webSpeechFallback(cleaned, agent, onEnd);
+        webSpeechFallback(cleaned, onEnd);
       };
 
-      await audio.play().catch(() => webSpeechFallback(cleaned, agent, onEnd));
+      await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
     } catch {
-      webSpeechFallback(cleaned, agent, onEnd);
+      webSpeechFallback(cleaned, onEnd);
     }
   }, []); // stable — reads state via refs
 
-  // ── STT: listen for one user turn ──────────────────────────────────────
+  // How long after the last speech chunk to wait before sending to the agent.
+  // Gives the user time to pause mid-sentence and continue naturally.
+  const SPEECH_SILENCE_MS = 1600;
+
+  // ── STT: listen continuously, accumulate across sessions, debounce send ──
   function startListening() {
     if (!isActiveRef.current) return;
     const w = window as WindowWithSpeech;
@@ -178,12 +187,31 @@ export default function CallStudio() {
 
     rec.onend = () => {
       recognitionRef.current = null;
-      const text = finalTextRef.current;
-      if (text && isActiveRef.current) {
-        finalTextRef.current = "";
-        callAgent(text);
+      const chunk = finalTextRef.current;
+      finalTextRef.current = "";
+
+      if (chunk && isActiveRef.current) {
+        // Append to anything already said in this turn
+        accumulatedTextRef.current = (accumulatedTextRef.current + " " + chunk).trim();
+
+        // Reset the silence timer — user may still be mid-sentence
+        if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
+        processingTimerRef.current = setTimeout(() => {
+          processingTimerRef.current = null;
+          const full = accumulatedTextRef.current;
+          if (full && isActiveRef.current && agentStateRef.current === "listening") {
+            accumulatedTextRef.current = "";
+            setInterimText("");
+            callAgent(full);
+          }
+        }, SPEECH_SILENCE_MS);
+
+        // Restart immediately so we catch the continuation
+        setTimeout(() => {
+          if (isActiveRef.current && agentStateRef.current === "listening") startListening();
+        }, 120);
       } else if (isActiveRef.current && agentStateRef.current === "listening") {
-        // silence — restart listening after a short pause
+        // Pure silence — restart
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
         }, 400);
@@ -206,6 +234,12 @@ export default function CallStudio() {
   // ── Core agent call ────────────────────────────────────────────────────
   const callAgent = useCallback(async (userInput: string) => {
     if (!isActiveRef.current) return;
+
+    // Cancel any pending speech timer and clear accumulation for this turn
+    if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
+    accumulatedTextRef.current = "";
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
 
     // Add user turn to history (skip on greeting trigger)
     let snapshot = turnsRef.current;
@@ -262,10 +296,12 @@ export default function CallStudio() {
   // ── Call lifecycle ─────────────────────────────────────────────────────
   const startCall = useCallback(async () => {
     // Reset
-    setTurns([]);           turnsRef.current       = [];
+    setTurns([]);           turnsRef.current        = [];
     setActiveAgent("orchestrator"); activeAgentRef.current = "orchestrator";
     setBrief(null);         setBriefError("");
-    setElapsed(0);          finalTextRef.current   = "";
+    setElapsed(0);          finalTextRef.current    = "";
+    accumulatedTextRef.current = "";
+    if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
 
     isActiveRef.current = true;
     setStatus("active");
@@ -279,17 +315,7 @@ export default function CallStudio() {
       1000
     );
 
-    // Pre-load Web Speech voices in the background (used as fallback only)
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      synthRef.current = window.speechSynthesis;
-      const v = synthRef.current.getVoices();
-      if (v.length > 0) voicesRef.current = v;
-      else synthRef.current.addEventListener("voiceschanged", () => {
-        voicesRef.current = synthRef.current?.getVoices() ?? [];
-      }, { once: true });
-    }
-
-    // Trigger greeting immediately — don't block on voice loading
+    // Trigger greeting
     await callAgent("");
   }, [callAgent]);
 
@@ -302,6 +328,8 @@ export default function CallStudio() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
+    if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
+    accumulatedTextRef.current = "";
     mute();
     recognitionRef.current?.abort();
     recognitionRef.current = null;
