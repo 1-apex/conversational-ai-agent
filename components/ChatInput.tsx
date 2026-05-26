@@ -59,9 +59,11 @@ export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerR
   const onSendRef = useRef(onSend);
   useEffect(() => { onSendRef.current = onSend; }, [onSend]);
 
-  // Holds the final transcript between isFinal result and the auto-send
-  // timeout, so it can be cancelled if the user clicks Stop first.
+  // Holds the accumulated transcript until the silence timer fires.
   const pendingRef = useRef("");
+  // Timer that fires after SILENCE_MS of no new speech to auto-send.
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SILENCE_MS = 2000;
 
   // ── Recognition setup (runs once) ──────────────────────────────────────
   useEffect(() => {
@@ -74,9 +76,30 @@ export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerR
     setSpeechSupported(true);
 
     const rec = new RecognitionCtor();
-    rec.continuous = false;
+    rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
+
+    const clearSilenceTimer = () => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+    };
+
+    const armSilenceTimer = () => {
+      clearSilenceTimer();
+      silenceTimerRef.current = setTimeout(() => {
+        silenceTimerRef.current = null;
+        const toSend = pendingRef.current;
+        if (toSend && isListeningRef.current) {
+          recognitionRef.current?.stop();
+          onSendRef.current(toSend);
+          setInput("");
+          pendingRef.current = "";
+        }
+      }, SILENCE_MS);
+    };
 
     rec.onresult = (event: SREvent) => {
       let transcript = "";
@@ -84,27 +107,26 @@ export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerR
         transcript += event.results[i][0].transcript;
       }
       setInput(transcript);
-
-      if (event.results[event.results.length - 1].isFinal) {
-        const final = transcript.trim();
-        pendingRef.current = final;
-        // 400 ms so the user can see what was captured before it sends
-        setTimeout(() => {
-          if (pendingRef.current) {
-            onSendRef.current(pendingRef.current);
-            setInput("");
-            pendingRef.current = "";
-          }
-        }, 400);
-      }
+      pendingRef.current = transcript.trim();
+      // Reset the silence countdown on every new speech fragment
+      armSilenceTimer();
     };
 
     rec.onend = () => {
+      clearSilenceTimer();
+      // If recognition ended unexpectedly while we still have a transcript, send it
+      const toSend = pendingRef.current;
+      if (toSend && isListeningRef.current) {
+        onSendRef.current(toSend);
+        setInput("");
+        pendingRef.current = "";
+      }
       setIsListening(false);
       isListeningRef.current = false;
     };
 
     rec.onerror = () => {
+      clearSilenceTimer();
       setIsListening(false);
       isListeningRef.current = false;
       pendingRef.current = "";
@@ -136,6 +158,7 @@ export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerR
   // ── Stop mic when TTS starts (prevents feedback loop) ──────────────────
   useEffect(() => {
     if (isSpeaking && isListeningRef.current) {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
       recognitionRef.current?.stop();
       pendingRef.current = "";
     }
@@ -144,6 +167,7 @@ export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerR
   // ── Stop mic when input is disabled (assistant is processing) ──────────
   useEffect(() => {
     if (disabled && isListeningRef.current) {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
       recognitionRef.current?.stop();
       pendingRef.current = "";
     }
@@ -161,8 +185,10 @@ export default function ChatInput({ onSend, disabled, isSpeaking, listenTriggerR
   const toggleListening = () => {
     if (!recognitionRef.current || disabled || isSpeaking) return;
     if (isListening) {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
       recognitionRef.current.stop();
       pendingRef.current = "";
+      setInput("");
     } else {
       setInput("");
       pendingRef.current = "";

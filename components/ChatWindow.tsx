@@ -71,8 +71,31 @@ export default function ChatWindow() {
     }
   }
 
-  function speak(text: string) {
-    if (!synthRef.current) return;
+  function speak(text: string, msgId: string, words: string[]) {
+    const msPerWord = Math.round(1000 / (2.5 * 1.05));
+
+    function startWordTimer() {
+      let wordIdx = 0;
+      animTimerRef.current = setInterval(() => {
+        wordIdx++;
+        const partial = words.slice(0, wordIdx).join(" ");
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msgId ? { ...m, content: partial } : m))
+        );
+        if (wordIdx >= words.length) {
+          clearAnimTimer();
+          setTypingMsgId(null);
+          pendingMsgRef.current = null;
+        }
+      }, msPerWord);
+    }
+
+    if (!synthRef.current) {
+      // No speech synthesis — reveal text immediately
+      startWordTimer();
+      return;
+    }
+
     synthRef.current.cancel();
 
     const utterance = new SpeechSynthesisUtterance(toSpeakable(text));
@@ -91,7 +114,10 @@ export default function ChatWindow() {
     );
     if (preferred) utterance.voice = preferred;
 
-    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      startWordTimer(); // text reveals only when audio actually begins
+    };
     utterance.onend = () => {
       setIsSpeaking(false);
       if (voiceModeRef.current) {
@@ -138,9 +164,9 @@ export default function ChatWindow() {
 
       const msgId = generateId();
       const words = data.reply.trim().split(/\s+/).filter(Boolean);
-      const msPerWord = Math.round(1000 / (2.5 * 1.05)); // ~380 ms, matches utterance.rate
 
-      // Start with empty content; timer fills it word by word
+      // Add message with empty content — speak() fills it word by word
+      // only once audio actually starts (utterance.onstart)
       setMessages((prev) => [
         ...prev,
         { id: msgId, role: "assistant", content: "", timestamp: Date.now() },
@@ -149,21 +175,7 @@ export default function ChatWindow() {
       setTypingMsgId(msgId);
       pendingMsgRef.current = { id: msgId, fullContent: data.reply };
 
-      let wordIdx = 0;
-      animTimerRef.current = setInterval(() => {
-        wordIdx++;
-        const partial = words.slice(0, wordIdx).join(" ");
-        setMessages((prev) =>
-          prev.map((m) => (m.id === msgId ? { ...m, content: partial } : m))
-        );
-        if (wordIdx >= words.length) {
-          clearAnimTimer();
-          setTypingMsgId(null);
-          pendingMsgRef.current = null;
-        }
-      }, msPerWord);
-
-      speak(data.reply);
+      speak(data.reply, msgId, words);
     } catch (err) {
       console.error("Chat error:", err);
       setMessages((prev) => [
