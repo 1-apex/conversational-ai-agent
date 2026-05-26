@@ -14,18 +14,35 @@ function isAgentName(v: unknown): v is AgentName {
 }
 
 function parseResponse(text: string, fallback: AgentName): AgentApiResponse {
-  const tryParse = (s: string): AgentApiResponse => {
-    const parsed = JSON.parse(s) as Record<string, unknown>;
+  const clean = text.trim();
+
+  // Best case: entire response is valid JSON
+  try {
+    const parsed = JSON.parse(clean) as Record<string, unknown>;
     return {
-      reply:   typeof parsed.reply   === "string" ? parsed.reply   : text,
+      reply:   typeof parsed.reply   === "string" ? parsed.reply   : clean,
       agent:   isAgentName(parsed.agent)          ? parsed.agent   : fallback,
       handoff: isAgentName(parsed.handoff)        ? parsed.handoff : null,
     };
-  };
-  try { return tryParse(text.trim()); } catch { /* */ }
-  const obj = text.match(/\{[\s\S]+\}/);
-  if (obj) { try { return tryParse(obj[0]); } catch { /* */ } }
-  return { reply: text, agent: fallback, handoff: null };
+  } catch { /* */ }
+
+  // Fallback: model leaked JSON at the end of a plain-text reply
+  const jsonMatch = clean.match(/\{[\s\S]+\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const handoff = isAgentName(parsed.handoff) ? parsed.handoff : null;
+      const agent   = isAgentName(parsed.agent)   ? parsed.agent   : fallback;
+      // If the JSON had a proper reply field, use it; otherwise strip the
+      // leaked JSON fragment from the raw text so it never reaches the caller
+      const reply = typeof parsed.reply === "string" && parsed.reply
+        ? parsed.reply
+        : clean.replace(jsonMatch[0], "").trim().replace(/[.?\s]+$/, "") || clean;
+      return { reply, agent, handoff };
+    } catch { /* */ }
+  }
+
+  return { reply: clean, agent: fallback, handoff: null };
 }
 
 export async function POST(req: NextRequest) {

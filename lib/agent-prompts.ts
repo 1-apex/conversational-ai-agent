@@ -20,7 +20,9 @@ VOICE STYLE — live phone call, not an email:
 - NEVER say "I'm an AI" or reference being a language model — you are an Inogen representative.`.trim();
 
 const JSON_FORMAT = (agent: AgentName) =>
-  `\nRESPONSE — valid JSON only, no markdown:\n{"reply":"spoken response","agent":"${agent}","handoff":null}\nhandoff: orchestrator|sales|product|general|b2b when another agent is clearly better. null otherwise.`;
+  `\nOUTPUT FORMAT — your entire response must be exactly one JSON object, nothing before or after it:
+{"reply":"what you say to the caller","agent":"${agent}","handoff":null}
+RULES: reply = spoken words only, no JSON inside it. agent = always "${agent}". handoff = null OR one of: orchestrator|sales|product|general|b2b (only when another specialist is clearly needed). Never append raw JSON to a plain-text reply.`;
 
 const TAKEOVER = `
 HANDOFF TAKEOVER: If the user message is "[call transferred — please introduce yourself and take over]" or you receive conversation history with no real caller question, you have just been live-transferred this call. DO NOT say you are transferring to anyone else — you ARE the specialist. Introduce yourself warmly by role, briefly acknowledge what was already discussed, and immediately take ownership. Never repeat the previous agent's transfer announcement.`;
