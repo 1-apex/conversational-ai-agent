@@ -111,7 +111,7 @@ export default function CallStudio() {
   }
 
   // ── TTS: try ElevenLabs first, fall back to Web Speech ─────────────────
-  const speak = useCallback(async (text: string, agent: AgentName) => {
+  const speak = useCallback(async (text: string, agent: AgentName, afterSpeak?: () => void) => {
     mute();
     setAgentState("speaking");
     agentStateRef.current = "speaking";
@@ -119,9 +119,13 @@ export default function CallStudio() {
     const cleaned = toSpeakable(text);
     const onEnd = () => {
       if (!isActiveRef.current) return;
-      setAgentState("listening");
-      agentStateRef.current = "listening";
-      startListening();
+      if (afterSpeak) {
+        afterSpeak();
+      } else {
+        setAgentState("listening");
+        agentStateRef.current = "listening";
+        startListening();
+      }
     };
 
     try {
@@ -268,22 +272,31 @@ export default function CallStudio() {
       const data = (await res.json()) as AgentApiResponse;
 
       // Switch agent if handoff requested
-      const effectiveAgent = data.handoff ?? data.agent;
-      if (effectiveAgent !== activeAgentRef.current) {
-        setActiveAgent(effectiveAgent);
-        activeAgentRef.current = effectiveAgent;
+      const isHandoff = !!data.handoff && data.handoff !== activeAgentRef.current;
+      if (isHandoff) {
+        setActiveAgent(data.handoff!);
+        activeAgentRef.current = data.handoff!;
       }
 
-      // Add agent turn
+      // Save turn attributed to whoever actually generated it (data.agent = orchestrator,
+      // not the new agent) so history stays coherent for the incoming agent
       const agentTurn: AgentTurn = {
         id: genId(), role: "agent", content: data.reply,
-        agent: effectiveAgent, timestamp: Date.now(),
+        agent: data.agent, timestamp: Date.now(),
       };
       const withAgent = [...turnsRef.current, agentTurn];
       setTurns(withAgent);
       turnsRef.current = withAgent;
 
-      speak(data.reply, effectiveAgent);
+      if (isHandoff) {
+        // Speak the transition message, then immediately trigger a greeting
+        // from the new agent so it can introduce itself before listening
+        speak(data.reply, data.agent, () => {
+          if (isActiveRef.current) callAgent("");
+        });
+      } else {
+        speak(data.reply, data.agent);
+      }
     } catch (err) {
       console.error("Agent call failed:", err);
       // recover — open mic again
