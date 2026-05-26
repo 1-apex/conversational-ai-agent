@@ -66,6 +66,10 @@ export default function CallStudio() {
   const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef    = useRef<SpeechRecognitionInstance | null>(null);
   const currentAudioRef   = useRef<HTMLAudioElement | null>(null);
+  const silenceWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSpeechTimeRef = useRef(0);
+  const checkinCountRef   = useRef(0);
+  const CHECKIN_AFTER_MS  = 8000; // silence threshold before "are you still there?"
 
   // Sync state → refs
   useEffect(() => { agentStateRef.current  = agentState;  }, [agentState]);
@@ -83,6 +87,44 @@ export default function CallStudio() {
       currentAudioRef.current = null;
     }
     window.speechSynthesis?.cancel();
+  }
+
+  // ── Silence watcher — fires a check-in if user goes quiet too long ───────
+  function clearSilenceWatcher() {
+    if (silenceWatcherRef.current) {
+      clearInterval(silenceWatcherRef.current);
+      silenceWatcherRef.current = null;
+    }
+  }
+
+  function armSilenceWatcher() {
+    if (silenceWatcherRef.current) return; // already armed
+    lastSpeechTimeRef.current = Date.now();
+    silenceWatcherRef.current = setInterval(() => {
+      if (!isActiveRef.current || agentStateRef.current !== "listening") {
+        clearSilenceWatcher();
+        return;
+      }
+      if (Date.now() - lastSpeechTimeRef.current < CHECKIN_AFTER_MS) return;
+
+      checkinCountRef.current++;
+      lastSpeechTimeRef.current = Date.now(); // prevent re-fire until next interval
+      clearSilenceWatcher();
+
+      if (checkinCountRef.current > 2) return; // 3 unanswered check-ins — give up
+
+      const msg = checkinCountRef.current === 1
+        ? "Just checking — are you still there?"
+        : "No worries, take your time. I'm here whenever you're ready.";
+
+      const checkInTurn: AgentTurn = {
+        id: genId(), role: "agent", content: msg,
+        agent: activeAgentRef.current, timestamp: Date.now(),
+      };
+      setTurns((prev) => [...prev, checkInTurn]);
+      turnsRef.current = [...turnsRef.current, checkInTurn];
+      speak(msg, activeAgentRef.current); // onEnd → startListening → re-arms watcher
+    }, 1000);
   }
 
   // ── Web Speech fallback (ElevenLabs error recovery only) ─────────────────
@@ -180,6 +222,10 @@ export default function CallStudio() {
     rec.lang           = "en-US";
 
     rec.onresult = (event: SREvent) => {
+      // User is speaking — reset silence tracking
+      lastSpeechTimeRef.current = Date.now();
+      checkinCountRef.current = 0;
+
       let transcript = "";
       for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       setInterimText(transcript);
@@ -232,14 +278,22 @@ export default function CallStudio() {
     };
 
     recognitionRef.current = rec;
-    try { rec.start(); } catch { /* already started */ }
+    try {
+      rec.start();
+      armSilenceWatcher(); // start counting silence from now
+    } catch {
+      setTimeout(() => {
+        if (isActiveRef.current && agentStateRef.current === "listening") startListening();
+      }, 500);
+    }
   }
 
   // ── Core agent call ────────────────────────────────────────────────────
   const callAgent = useCallback(async (userInput: string) => {
     if (!isActiveRef.current) return;
 
-    // Cancel any pending speech timer and clear accumulation for this turn
+    // Cancel any pending speech/silence timers
+    clearSilenceWatcher();
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
     accumulatedTextRef.current = "";
     recognitionRef.current?.abort();
@@ -316,6 +370,8 @@ export default function CallStudio() {
     accumulatedTextRef.current = "";
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
 
+    checkinCountRef.current = 0;
+    lastSpeechTimeRef.current = Date.now();
     isActiveRef.current = true;
     setStatus("active");
     setAgentState("thinking");
@@ -343,6 +399,7 @@ export default function CallStudio() {
 
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
     accumulatedTextRef.current = "";
+    clearSilenceWatcher();
     mute();
     recognitionRef.current?.abort();
     recognitionRef.current = null;
@@ -380,6 +437,7 @@ export default function CallStudio() {
   useEffect(() => () => {
     isActiveRef.current = false;
     mute();
+    clearSilenceWatcher();
     recognitionRef.current?.abort();
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
