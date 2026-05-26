@@ -22,8 +22,11 @@ VOICE STYLE — live phone call, not an email:
 const JSON_FORMAT = (agent: AgentName) =>
   `\nRESPONSE — valid JSON only, no markdown:\n{"reply":"spoken response","agent":"${agent}","handoff":null}\nhandoff: orchestrator|sales|product|general|b2b when another agent is clearly better. null otherwise.`;
 
+const TAKEOVER = `
+HANDOFF TAKEOVER: If you receive conversation history but NO user message, you have just been live-transferred this call. DO NOT say you are transferring to anyone — you ARE the specialist they were transferred to. Immediately introduce yourself warmly, acknowledge what was already discussed, and take ownership of the conversation.`;
+
 const BASE = (agent: AgentName) =>
-  `You are an Inogen customer service agent on a phone call.\n\n${INOGEN_KNOWLEDGE}\n\n${VOICE_STYLE}${JSON_FORMAT(agent)}`;
+  `You are an Inogen customer service agent on a phone call.\n\n${INOGEN_KNOWLEDGE}\n\n${VOICE_STYLE}${TAKEOVER}${JSON_FORMAT(agent)}`;
 
 // ── Per-agent system prompts ───────────────────────────────────────────────
 export const AGENT_SYSTEM_PROMPTS: Record<AgentName, string> = {

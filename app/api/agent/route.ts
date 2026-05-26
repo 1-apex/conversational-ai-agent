@@ -46,8 +46,13 @@ export async function POST(req: NextRequest) {
       content: t.content,
     }));
 
-    // Add current user input if present (empty = trigger greeting)
-    if (userInput) messages.push({ role: "user", content: userInput });
+    if (userInput) {
+      messages.push({ role: "user", content: userInput });
+    } else if (history.length > 0) {
+      // Empty input with history = handoff takeover. Inject a nudge so the
+      // model doesn't continue the transfer context from the previous agent.
+      messages.push({ role: "user", content: "[call transferred — please introduce yourself and take over]" });
+    }
 
     const res = await fetch(GROQ_URL, {
       method: "POST",
