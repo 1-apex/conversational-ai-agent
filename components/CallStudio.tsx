@@ -146,7 +146,7 @@ export default function CallStudio() {
       const safeEnd = () => { if (!fired) { fired = true; onEnd(); } };
       utterance.onend   = safeEnd;
       utterance.onerror = safeEnd;
-      setTimeout(safeEnd, Math.max(6000, text.split(/\s+/).length * 380));
+      setTimeout(safeEnd, Math.max(3000, text.split(/\s+/).length * 400));
       if (synth.paused) synth.resume();
       synth.speak(utterance);
     }, 50);
@@ -171,11 +171,16 @@ export default function CallStudio() {
     };
 
     try {
+      const controller = new AbortController();
+      const ttsTimeout = setTimeout(() => controller.abort(), 4000); // fail fast if ElevenLabs hangs
+
       const res = await fetch("/api/tts", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ text: cleaned, agent }),
+        signal:  controller.signal,
       });
+      clearTimeout(ttsTimeout);
 
       if (res.status === 501) throw new Error("no-key"); // no ElevenLabs key → fall back
       if (!res.ok) throw new Error(`tts-${res.status}`);
