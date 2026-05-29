@@ -55,6 +55,9 @@ export default function CallStudio() {
   const [briefError,   setBriefError]   = useState("");
   const [quotaUsed,    setQuotaUsed]    = useState(0);
 
+  const callIdRef      = useRef("");
+  const callStartRef   = useRef("");
+
   const EL_QUOTA_LIMIT = 10_000;
   const EL_QUOTA_WARN  = 8_000;
 
@@ -454,6 +457,8 @@ export default function CallStudio() {
     accumulatedTextRef.current = "";
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
 
+    callIdRef.current    = genId();
+    callStartRef.current = new Date().toISOString();
     checkinCountRef.current = 0;
     lastSpeechTimeRef.current = Date.now();
     isActiveRef.current = true;
@@ -497,6 +502,7 @@ export default function CallStudio() {
       text: t.content, timestamp: t.timestamp, entities: EMPTY_ENTITY_MAP,
     }));
 
+    let callBrief: CallBriefData | null = null;
     try {
       const res = await fetch("/api/extract", {
         method: "POST",
@@ -504,10 +510,27 @@ export default function CallStudio() {
         body: JSON.stringify({ turns: briefTurns, duration }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setBrief((await res.json()) as CallBriefData);
+      callBrief = (await res.json()) as CallBriefData;
+      setBrief(callBrief);
     } catch (err) {
       setBriefError(err instanceof Error ? err.message : "Brief generation failed");
     }
+
+    // Log call to database (fire-and-forget — never blocks UI)
+    const agentsUsed = [...new Set(currentTurns.filter(t => t.agent).map(t => t.agent!))];
+    fetch("/api/calls", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id:         callIdRef.current,
+        startedAt:  callStartRef.current,
+        duration,
+        agentsUsed,
+        turns:      currentTurns,
+        brief:      callBrief,
+      }),
+    }).catch(() => { /* non-fatal */ });
+
     setStatus("done");
   }, []);
 
