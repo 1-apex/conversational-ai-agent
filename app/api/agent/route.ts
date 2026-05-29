@@ -77,29 +77,34 @@ export async function POST(req: NextRequest) {
       messages.push({ role: "user", content: "[call transferred — please introduce yourself and take over]" });
     }
 
-    const res = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization:  `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model:       MODEL,
-        temperature: 0.65,
-        max_tokens:  280,  // concise phone-call responses
-        messages: [
-          { role: "system", content: AGENT_SYSTEM_PROMPTS[currentAgent] },
-          ...messages,
-        ],
-      }),
+    const payload = JSON.stringify({
+      model:       MODEL,
+      temperature: 0.65,
+      max_tokens:  280,
+      messages: [
+        { role: "system", content: AGENT_SYSTEM_PROMPTS[currentAgent] },
+        ...messages,
+      ],
     });
 
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `Groq ${res.status}: ${err}` }, { status: 500 });
+    let res: Response | undefined;
+    const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 500));
+      res = await fetch(GROQ_URL, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body:    payload,
+      });
+      if (res.ok || !RETRYABLE.has(res.status)) break;
     }
 
-    const data   = (await res.json()) as GroqResponse;
+    if (!res!.ok) {
+      const err = await res!.text();
+      return NextResponse.json({ error: `Groq ${res!.status}: ${err}` }, { status: 500 });
+    }
+
+    const data   = (await res!.json()) as GroqResponse;
     const raw    = data.choices[0].message.content;
     const parsed = parseResponse(raw, currentAgent);
 

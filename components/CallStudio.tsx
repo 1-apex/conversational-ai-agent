@@ -381,10 +381,7 @@ export default function CallStudio() {
       }
     } catch (err) {
       console.error("Agent call failed:", err);
-      // recover — open mic again
-      setAgentState("listening");
-      agentStateRef.current = "listening";
-      startListening();
+      speak("Sorry, I didn't catch that — could you say that again?", activeAgentRef.current);
     }
   }, [speak]);
 
