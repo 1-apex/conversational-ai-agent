@@ -9,9 +9,10 @@ interface Props {
   interimText: string;
   agentState: AgentState;
   activeAgent: AgentName;
+  speakingTurnId: string;
 }
 
-export default function AgentTranscript({ turns, interimText, agentState, activeAgent }: Props) {
+export default function AgentTranscript({ turns, interimText, agentState, activeAgent, speakingTurnId }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,12 +57,15 @@ export default function AgentTranscript({ turns, interimText, agentState, active
                 </span>
 
                 {/* Bubble */}
-                <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-all ${
                   isAgent
-                    ? "glass-panel rounded-tl-md text-gray-800"
+                    ? `glass-panel rounded-tl-md text-gray-800 ${turn.id === speakingTurnId ? "ring-2 ring-teal-300 shadow-teal-100 shadow-md" : ""}`
                     : "bg-linear-to-br from-violet-500 to-purple-600 text-white rounded-tr-md"
                 }`}>
                   {turn.content}
+                  {turn.id === speakingTurnId && (
+                    <span className="inline-block w-0.5 h-3.5 bg-teal-400 rounded ml-1 animate-pulse align-middle" />
+                  )}
                 </div>
               </div>
             </div>

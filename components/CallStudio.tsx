@@ -54,6 +54,9 @@ export default function CallStudio() {
   const [brief,        setBrief]        = useState<CallBriefData | null>(null);
   const [briefError,   setBriefError]   = useState("");
   const [quotaUsed,    setQuotaUsed]    = useState(0);
+  const [transferring, setTransferring] = useState(false);
+  const [sentiment,    setSentiment]    = useState<"positive"|"neutral"|"negative">("neutral");
+  const [speakingTurnId, setSpeakingTurnId] = useState("");
 
   const callIdRef      = useRef("");
   const callStartRef   = useRef("");
@@ -233,6 +236,7 @@ export default function CallStudio() {
     const cleaned = toSpeakable(text);
     const onEnd = () => {
       stopInterruptListener();
+      setSpeakingTurnId("");
       if (!isActiveRef.current) return;
       if (afterSpeak) {
         afterSpeak();
@@ -454,6 +458,7 @@ export default function CallStudio() {
       snapshot = [...snapshot, userTurn];
       setTurns(snapshot);
       turnsRef.current = snapshot;
+      setSentiment(scoreSentiment(userInput));
     }
 
     setAgentState("thinking");
@@ -490,6 +495,7 @@ export default function CallStudio() {
       setTurns(withAgent);
       turnsRef.current = withAgent;
 
+      setSpeakingTurnId(agentTurn.id);
       if (isHandoff) {
         // Speak the transition message, then immediately trigger a greeting
         // from the new agent so it can introduce itself before listening
@@ -512,6 +518,8 @@ export default function CallStudio() {
     setActiveAgent("orchestrator"); activeAgentRef.current = "orchestrator";
     setBrief(null);         setBriefError("");
     setElapsed(0);          finalTextRef.current    = "";
+    setSentiment("neutral");
+    setSpeakingTurnId("");
     accumulatedTextRef.current = "";
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
 
@@ -592,10 +600,22 @@ export default function CallStudio() {
     setStatus("done");
   }, []);
 
+  const handleTransfer = useCallback(async () => {
+    setTransferring(true);
+    mute();
+    stopInterruptListener();
+    recognitionRef.current?.abort();
+    const msg = "Sure, let me connect you with a live specialist right now. Please hold for just a moment.";
+    webSpeechFallback(msg, () => endCall());
+  }, [endCall]);
+
   const handleNewCall = useCallback(() => {
     setStatus("idle");   setBrief(null);     setBriefError("");
     setTurns([]);        setElapsed(0);      setActiveAgent("orchestrator");
     setAgentState("idle");
+    setTransferring(false);
+    setSentiment("neutral");
+    setSpeakingTurnId("");
   }, []);
 
   // Cleanup on unmount
@@ -607,6 +627,18 @@ export default function CallStudio() {
     interruptRecRef.current?.abort();
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
+
+  // ── Sentiment scoring ─────────────────────────────────────────────────
+  const SENT_POS = ["great","thanks","thank","perfect","yes","interested","helpful","good","love","excellent","sure","definitely","absolutely","appreciate","wonderful","happy","excited"];
+  const SENT_NEG = ["no","not interested","cancel","disappointed","frustrated","expensive","problem","issue","wrong","bad","terrible","refuse","unhappy","difficult","complicated","too much","confusing"];
+  function scoreSentiment(text: string): "positive"|"neutral"|"negative" {
+    const l = text.toLowerCase();
+    const pos = SENT_POS.filter(w => l.includes(w)).length;
+    const neg = SENT_NEG.filter(w => l.includes(w)).length;
+    if (pos > neg + 1) return "positive";
+    if (neg > pos) return "negative";
+    return "neutral";
+  }
 
   const agentMeta = AGENT_META[activeAgent];
   const isEnding  = status === "ending";
@@ -621,7 +653,7 @@ export default function CallStudio() {
             {activeAgent[0].toUpperCase()}
           </div>
           <div>
-            <h1 className="text-base font-semibold text-gray-800 leading-tight">CareLink</h1>
+            <h1 className="text-base font-semibold text-gray-800 leading-tight">Kyron</h1>
             <p className="text-[11px] text-gray-400">AI Call Agent — Inogen</p>
           </div>
 
@@ -630,6 +662,16 @@ export default function CallStudio() {
           )}
 
           <div className="ml-auto flex items-center gap-4">
+            {status === "active" && (
+              <div className={`flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
+                sentiment === "positive" ? "bg-emerald-100 text-emerald-700"
+                : sentiment === "negative" ? "bg-red-100 text-red-600"
+                : "bg-gray-100 text-gray-500"
+              }`}>
+                <span>●</span>
+                <span>{sentiment === "positive" ? "Positive" : sentiment === "negative" ? "Negative" : "Neutral"}</span>
+              </div>
+            )}
             {quotaUsed >= EL_QUOTA_WARN && (
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 quotaUsed >= EL_QUOTA_LIMIT
@@ -651,13 +693,28 @@ export default function CallStudio() {
                   <span className="text-xs text-red-600 font-medium">Live</span>
                 </div>
                 <button
+                  onClick={handleTransfer}
+                  disabled={transferring}
+                  className="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-all disabled:opacity-50"
+                >
+                  Transfer
+                </button>
+                <button
                   onClick={endCall}
-                  className="text-xs px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all"
+                  disabled={transferring}
+                  className="text-xs px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-all disabled:opacity-50"
                 >
                   End Call
                 </button>
               </>
             )}
+            <a
+              href="/dashboard"
+              target="_blank"
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Dashboard
+            </a>
             {status === "ending" && <span className="text-xs text-gray-400">Generating brief…</span>}
             {status === "done"   && (
               <div className="flex items-center gap-1.5">
@@ -727,6 +784,7 @@ export default function CallStudio() {
               interimText={interimText}
               agentState={agentState}
               activeAgent={activeAgent}
+              speakingTurnId={speakingTurnId}
             />
           )}
         </div>
