@@ -27,7 +27,7 @@ function makeLimiter(requests: number, windowSeconds: number): Limiter {
     return new Ratelimit({
       redis: Redis.fromEnv(),
       limiter: Ratelimit.slidingWindow(requests, `${windowSeconds} s`),
-      prefix: "kyron:rl",
+      prefix: "inogen:rl",
     });
   }
   return new InMemoryLimiter(requests, windowSeconds * 1000);

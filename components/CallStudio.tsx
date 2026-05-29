@@ -72,7 +72,7 @@ export default function CallStudio() {
 
   function quotaKey() {
     const d = new Date();
-    return `kyron_el_quota_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return `inogen_el_quota_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export default function CallStudio() {
   // Load settings from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("kyron_settings");
+      const saved = localStorage.getItem("inogen_settings");
       if (saved) {
         const parsed = JSON.parse(saved) as CallSettings;
         setSettings(parsed);
@@ -185,7 +185,7 @@ export default function CallStudio() {
     const next = { ...settingsRef.current, ...patch };
     setSettings(next);
     settingsRef.current = next;
-    localStorage.setItem("kyron_settings", JSON.stringify(next));
+    localStorage.setItem("inogen_settings", JSON.stringify(next));
   }
 
   // ── Silence watcher — fires a check-in if user goes quiet too long ───────
@@ -714,7 +714,7 @@ export default function CallStudio() {
             {activeAgent[0].toUpperCase()}
           </div>
           <div>
-            <h1 className="text-base font-semibold text-gray-800 leading-tight">Kyron</h1>
+            <h1 className="text-base font-semibold text-gray-800 leading-tight">Inogen</h1>
             <p className="text-[11px] text-gray-400">AI Call Agent — Inogen</p>
           </div>
 

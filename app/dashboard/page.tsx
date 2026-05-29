@@ -166,7 +166,7 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Kyron Analytics</h1>
+            <h1 className="text-xl font-bold text-gray-900">Inogen Analytics</h1>
             <p className="text-xs text-gray-400 mt-0.5">Last {calls.length} calls</p>
           </div>
           <a href="/" className="text-xs text-teal-600 hover:underline">← Back to agent</a>

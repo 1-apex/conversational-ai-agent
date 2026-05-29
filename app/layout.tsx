@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "CareLink — Call Intelligence",
-  description: "Real-time call transcription, entity extraction, and AI-generated call briefs.",
+  title: "Inogen — AI Call Agent",
+  description: "Real-time AI voice agent for Inogen oxygen therapy solutions.",
 };
 
 export default function RootLayout({
