@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { ttsLimiter, getIp } from "@/lib/rate-limit";
 
 const VOICE_ID = "StsEnVb0Dmu25FGnhzqO";
 
 export async function POST(req: NextRequest) {
+  const { success } = await ttsLimiter.limit(getIp(req));
+  if (!success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     console.warn("[tts] ELEVENLABS_API_KEY not set");

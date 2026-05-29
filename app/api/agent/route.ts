@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AgentName, AgentTurn, AgentApiResponse } from "@/lib/types";
 import { AGENT_SYSTEM_PROMPTS } from "@/lib/agent-prompts";
+import { agentLimiter, getIp } from "@/lib/rate-limit";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "llama-3.3-70b-versatile";
@@ -46,6 +47,11 @@ function parseResponse(text: string, fallback: AgentName): AgentApiResponse {
 }
 
 export async function POST(req: NextRequest) {
+  const { success } = await agentLimiter.limit(getIp(req));
+  if (!success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   try {
     const body = (await req.json()) as {
       history?:       AgentTurn[];

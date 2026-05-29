@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TranscriptTurn } from "@/lib/types";
 import { generateRuleBrief } from "@/lib/rule-brief";
+import { extractLimiter, getIp } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
+  const { success } = await extractLimiter.limit(getIp(req));
+  if (!success) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   try {
     const body: unknown = await req.json();
     if (!body || typeof body !== "object") {
