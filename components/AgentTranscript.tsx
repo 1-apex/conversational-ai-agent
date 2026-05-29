@@ -10,9 +10,10 @@ interface Props {
   agentState: AgentState;
   activeAgent: AgentName;
   speakingTurnId: string;
+  pushToTalk: boolean;
 }
 
-export default function AgentTranscript({ turns, interimText, agentState, activeAgent, speakingTurnId }: Props) {
+export default function AgentTranscript({ turns, interimText, agentState, activeAgent, speakingTurnId, pushToTalk }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -85,6 +86,15 @@ export default function AgentTranscript({ turns, interimText, agentState, active
                 <span className="inline-block w-0.5 h-3.5 bg-gray-400 rounded ml-1 animate-pulse" />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* PTT hint */}
+        {pushToTalk && agentState === "listening" && turns.length > 0 && (
+          <div className="text-center py-2">
+            <span className="text-[11px] text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+              Hold <kbd className="font-mono bg-white border border-gray-200 rounded px-1">Space</kbd> to speak
+            </span>
           </div>
         )}
 

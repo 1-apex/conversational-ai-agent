@@ -10,6 +10,7 @@ import AgentBadge from "./AgentBadge";
 import AgentTranscript from "./AgentTranscript";
 import CubePulse from "./CubePulse";
 import CallBrief from "./CallBrief";
+import SettingsPanel, { CallSettings } from "./SettingsPanel";
 
 // ── SpeechRecognition type declarations ───────────────────────────────────
 interface SRAlternative { readonly transcript: string; }
@@ -58,6 +59,11 @@ export default function CallStudio() {
   const [sentiment,    setSentiment]    = useState<"positive"|"neutral"|"negative">("neutral");
   const [speakingTurnId, setSpeakingTurnId] = useState("");
 
+  const DEFAULT_SETTINGS: CallSettings = { silenceDebounceMs: 1600, silenceWatcherMs: 8000, maxCheckins: 2, pushToTalk: false };
+  const [settings,     setSettings]     = useState<CallSettings>(DEFAULT_SETTINGS);
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsRef = useRef<CallSettings>(DEFAULT_SETTINGS);
+
   const callIdRef      = useRef("");
   const callStartRef   = useRef("");
 
@@ -98,7 +104,22 @@ export default function CallStudio() {
   const silenceWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpeechTimeRef = useRef(0);
   const checkinCountRef   = useRef(0);
-  const CHECKIN_AFTER_MS  = 8000; // silence threshold before "are you still there?"
+  const pttHeldRef        = useRef(false);
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("kyron_settings");
+      if (saved) {
+        const parsed = JSON.parse(saved) as CallSettings;
+        setSettings(parsed);
+        settingsRef.current = parsed;
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Sync settingsRef whenever settings state changes
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   // Sync state → refs
   useEffect(() => { agentStateRef.current  = agentState;  }, [agentState]);
@@ -160,6 +181,13 @@ export default function CallStudio() {
     try { rec.start(); } catch { /* ignore */ }
   }
 
+  function updateSettings(patch: Partial<CallSettings>) {
+    const next = { ...settingsRef.current, ...patch };
+    setSettings(next);
+    settingsRef.current = next;
+    localStorage.setItem("kyron_settings", JSON.stringify(next));
+  }
+
   // ── Silence watcher — fires a check-in if user goes quiet too long ───────
   function clearSilenceWatcher() {
     if (silenceWatcherRef.current) {
@@ -176,13 +204,13 @@ export default function CallStudio() {
         clearSilenceWatcher();
         return;
       }
-      if (Date.now() - lastSpeechTimeRef.current < CHECKIN_AFTER_MS) return;
+      if (Date.now() - lastSpeechTimeRef.current < settingsRef.current.silenceWatcherMs) return;
 
       checkinCountRef.current++;
       lastSpeechTimeRef.current = Date.now(); // prevent re-fire until next interval
       clearSilenceWatcher();
 
-      if (checkinCountRef.current > 2) return; // 3 unanswered check-ins — give up
+      if (checkinCountRef.current >= settingsRef.current.maxCheckins) return;
 
       const msg = checkinCountRef.current === 1
         ? "Just checking — are you still there?"
@@ -353,16 +381,14 @@ export default function CallStudio() {
     }
   }, []); // stable — reads state via refs
 
-  // How long after the last speech chunk to wait before sending to the agent.
-  // Gives the user time to pause mid-sentence and continue naturally.
-  const SPEECH_SILENCE_MS = 1600;
-
   // ── STT: listen continuously, accumulate across sessions, debounce send ──
   function startListening() {
     if (!isActiveRef.current) return;
     const w = window as WindowWithSpeech;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) return;
+    // In PTT mode, only run when space is held
+    if (settingsRef.current.pushToTalk && !pttHeldRef.current) return;
 
     finalTextRef.current = "";
     setInterimText("");
@@ -405,7 +431,7 @@ export default function CallStudio() {
             setInterimText("");
             callAgent(full);
           }
-        }, SPEECH_SILENCE_MS);
+        }, settingsRef.current.silenceDebounceMs);
 
         // Restart immediately so we catch the continuation
         setTimeout(() => {
@@ -618,6 +644,39 @@ export default function CallStudio() {
     setSpeakingTurnId("");
   }, []);
 
+  // ── Push-to-talk keyboard handlers ───────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || !settingsRef.current.pushToTalk || e.repeat) return;
+      if (!isActiveRef.current || agentStateRef.current !== "listening") return;
+      e.preventDefault();
+      pttHeldRef.current = true;
+      recognitionRef.current?.abort();
+      accumulatedTextRef.current = "";
+      finalTextRef.current = "";
+      startListening();
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || !settingsRef.current.pushToTalk || !pttHeldRef.current) return;
+      pttHeldRef.current = false;
+      recognitionRef.current?.stop();
+      setTimeout(() => {
+        const full = accumulatedTextRef.current;
+        if (full && isActiveRef.current && agentStateRef.current === "listening") {
+          if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
+          accumulatedTextRef.current = "";
+          callAgent(full);
+        }
+      }, 80);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [callAgent]);
+
   // Cleanup on unmount
   useEffect(() => () => {
     isActiveRef.current = false;
@@ -644,7 +703,8 @@ export default function CallStudio() {
   const isEnding  = status === "ending";
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      <SettingsPanel open={showSettings} settings={settings} onClose={() => setShowSettings(false)} onChange={updateSettings} />
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className="glass-panel border-b border-white/20 px-6 py-3 shrink-0">
@@ -715,6 +775,13 @@ export default function CallStudio() {
             >
               Dashboard
             </a>
+            <button
+              onClick={() => setShowSettings(s => !s)}
+              className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Settings"
+            >
+              ⚙
+            </button>
             {status === "ending" && <span className="text-xs text-gray-400">Generating brief…</span>}
             {status === "done"   && (
               <div className="flex items-center gap-1.5">
@@ -785,6 +852,7 @@ export default function CallStudio() {
               agentState={agentState}
               activeAgent={activeAgent}
               speakingTurnId={speakingTurnId}
+              pushToTalk={settings.pushToTalk}
             />
           )}
         </div>
