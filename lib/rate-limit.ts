@@ -1,7 +1,26 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
-type Limiter = Pick<Ratelimit, "limit">;
+type Limiter = { limit(key: string): Promise<{ success: boolean }> };
+
+// Simple sliding-window rate limiter backed by in-process memory.
+// Works without any external service. Each serverless instance has its own
+// window, which is fine for single-process dev and acceptable for light prod
+// traffic. Add Upstash env vars to share limits across instances.
+class InMemoryLimiter implements Limiter {
+  private windows = new Map<string, number[]>();
+  constructor(private max: number, private windowMs: number) {}
+
+  async limit(key: string): Promise<{ success: boolean }> {
+    const now = Date.now();
+    const cutoff = now - this.windowMs;
+    const hits = (this.windows.get(key) ?? []).filter((t) => t > cutoff);
+    if (hits.length >= this.max) return { success: false };
+    hits.push(now);
+    this.windows.set(key, hits);
+    return { success: true };
+  }
+}
 
 function makeLimiter(requests: number, windowSeconds: number): Limiter {
   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
@@ -11,20 +30,9 @@ function makeLimiter(requests: number, windowSeconds: number): Limiter {
       prefix: "kyron:rl",
     });
   }
-  // Ephemeral in-memory fallback — works in dev without any external service.
-  // Each serverless instance has its own store; good enough for abuse prevention
-  // in single-process dev. Add Upstash env vars for production.
-  return new Ratelimit({
-    redis: new Map() as unknown as Redis,
-    limiter: Ratelimit.slidingWindow(requests, `${windowSeconds} s`),
-    prefix: "kyron:rl",
-  });
+  return new InMemoryLimiter(requests, windowSeconds * 1000);
 }
 
-// Per-route limiters — tuned to a realistic phone call session.
-// agent: ~15 turns/call, allow 2 concurrent sessions per IP
-// tts:   same cadence as agent
-// extract: called once per call, 5/min covers rapid retries
 export const agentLimiter   = makeLimiter(30, 60);
 export const ttsLimiter     = makeLimiter(30, 60);
 export const extractLimiter = makeLimiter(5,  60);
