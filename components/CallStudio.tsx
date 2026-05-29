@@ -90,6 +90,7 @@ export default function CallStudio() {
   const startTimeRef      = useRef(0);
   const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef    = useRef<SpeechRecognitionInstance | null>(null);
+  const interruptRecRef   = useRef<SpeechRecognitionInstance | null>(null);
   const currentAudioRef   = useRef<HTMLAudioElement | null>(null);
   const silenceWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpeechTimeRef = useRef(0);
@@ -112,6 +113,48 @@ export default function CallStudio() {
       currentAudioRef.current = null;
     }
     window.speechSynthesis?.cancel();
+    stopInterruptListener();
+  }
+
+  // ── Interrupt listener — lets user speak during agent TTS ────────────────
+  function stopInterruptListener() {
+    interruptRecRef.current?.abort();
+    interruptRecRef.current = null;
+  }
+
+  function startInterruptListener() {
+    if (!isActiveRef.current) return;
+    const w = window as WindowWithSpeech;
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = "en-US";
+    rec.onresult = (event: SREvent) => {
+      if (agentStateRef.current !== "speaking" || !isActiveRef.current) return;
+      const text = event.results[0]?.[0]?.transcript?.trim() ?? "";
+      if (text.split(/\s+/).length < 2) return; // ignore single-word echo artifacts
+      stopInterruptListener();
+      mute();
+      accumulatedTextRef.current = "";
+      finalTextRef.current = "";
+      callAgent(text);
+    };
+    rec.onend = () => {
+      interruptRecRef.current = null;
+      if (agentStateRef.current === "speaking" && isActiveRef.current) {
+        setTimeout(() => { if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener(); }, 200);
+      }
+    };
+    rec.onerror = () => {
+      interruptRecRef.current = null;
+      if (agentStateRef.current === "speaking" && isActiveRef.current) {
+        setTimeout(() => { if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener(); }, 300);
+      }
+    };
+    interruptRecRef.current = rec;
+    try { rec.start(); } catch { /* ignore */ }
   }
 
   // ── Silence watcher — fires a check-in if user goes quiet too long ───────
@@ -179,7 +222,7 @@ export default function CallStudio() {
 
   // ── TTS: try ElevenLabs first, fall back to Web Speech ─────────────────
   const speak = useCallback(async (text: string, agent: AgentName, afterSpeak?: () => void) => {
-    mute();
+    mute(); // also calls stopInterruptListener internally
     recognitionRef.current?.abort();
     recognitionRef.current = null;
     finalTextRef.current = "";
@@ -189,6 +232,7 @@ export default function CallStudio() {
 
     const cleaned = toSpeakable(text);
     const onEnd = () => {
+      stopInterruptListener();
       if (!isActiveRef.current) return;
       if (afterSpeak) {
         afterSpeak();
@@ -274,6 +318,9 @@ export default function CallStudio() {
         }, { once: true });
 
         await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
+        setTimeout(() => {
+          if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener();
+        }, 200);
       } else {
         // Fallback: buffer full response then play (Safari / no MediaSource)
         const blob  = await res.blob();
@@ -293,6 +340,9 @@ export default function CallStudio() {
         };
 
         await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
+        setTimeout(() => {
+          if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener();
+        }, 200);
       }
     } catch {
       webSpeechFallback(cleaned, onEnd);
@@ -393,6 +443,7 @@ export default function CallStudio() {
     clearSilenceWatcher();
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
     accumulatedTextRef.current = "";
+    stopInterruptListener();
     recognitionRef.current?.abort();
     recognitionRef.current = null;
 
@@ -553,6 +604,7 @@ export default function CallStudio() {
     mute();
     clearSilenceWatcher();
     recognitionRef.current?.abort();
+    interruptRecRef.current?.abort();
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
