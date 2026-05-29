@@ -32,10 +32,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const arrayBuffer = await new Response(stream).arrayBuffer();
-    const audio = Buffer.from(arrayBuffer);
-
-    return new NextResponse(audio, {
+    // Pipe stream directly — no server-side buffering, client receives chunks
+    // as ElevenLabs generates them for lower time-to-first-audio.
+    return new NextResponse(stream as unknown as ReadableStream, {
       headers: { "Content-Type": "audio/mpeg" },
     });
   } catch (error) {

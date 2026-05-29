@@ -204,27 +204,86 @@ export default function CallStudio() {
       });
       clearTimeout(ttsTimeout);
 
-      if (res.status === 501) throw new Error("no-key"); // no ElevenLabs key → fall back
+      if (res.status === 501) throw new Error("no-key");
       if (!res.ok) throw new Error(`tts-${res.status}`);
 
       addToQuota(cleaned.length);
-      const blob  = await res.blob();
-      const url   = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      currentAudioRef.current = audio;
 
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        if (currentAudioRef.current === audio) currentAudioRef.current = null;
-        onEnd();
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        if (currentAudioRef.current === audio) currentAudioRef.current = null;
-        webSpeechFallback(cleaned, onEnd);
-      };
+      // MediaSource streaming — audio begins after first chunk, not after full download
+      const MIME = "audio/mpeg";
+      if (res.body && typeof MediaSource !== "undefined" && MediaSource.isTypeSupported(MIME)) {
+        const ms  = new MediaSource();
+        const url = URL.createObjectURL(ms);
+        const audio = new Audio(url);
+        currentAudioRef.current = audio;
 
-      await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudioRef.current === audio) currentAudioRef.current = null;
+          onEnd();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudioRef.current === audio) currentAudioRef.current = null;
+          webSpeechFallback(cleaned, onEnd);
+        };
+
+        ms.addEventListener("sourceopen", () => {
+          const sb = ms.addSourceBuffer(MIME);
+          const queue: Uint8Array<ArrayBuffer>[] = [];
+          let appending = false;
+          let streamDone = false;
+
+          function flush() {
+            if (appending || !queue.length) {
+              if (!appending && streamDone) {
+                try { ms.endOfStream(); } catch { /* already ended */ }
+              }
+              return;
+            }
+            appending = true;
+            sb.appendBuffer(queue.shift()!);
+          }
+
+          sb.addEventListener("updateend", () => { appending = false; flush(); });
+
+          (async () => {
+            const reader = res.body!.getReader();
+            try {
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                queue.push(new Uint8Array(value) as Uint8Array<ArrayBuffer>);
+                flush();
+              }
+            } finally {
+              streamDone = true;
+              flush();
+            }
+          })();
+        }, { once: true });
+
+        await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
+      } else {
+        // Fallback: buffer full response then play (Safari / no MediaSource)
+        const blob  = await res.blob();
+        const url   = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudioRef.current = audio;
+
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudioRef.current === audio) currentAudioRef.current = null;
+          onEnd();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudioRef.current === audio) currentAudioRef.current = null;
+          webSpeechFallback(cleaned, onEnd);
+        };
+
+        await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
+      }
     } catch {
       webSpeechFallback(cleaned, onEnd);
     }
