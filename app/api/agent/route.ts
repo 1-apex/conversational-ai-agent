@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     const payload = JSON.stringify({
       model:       MODEL,
       temperature: 0.65,
-      max_tokens:  280,
+      max_tokens:  120,
       messages: [
         { role: "system", content: AGENT_SYSTEM_PROMPTS[currentAgent] },
         ...messages,

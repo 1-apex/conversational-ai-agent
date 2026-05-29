@@ -180,6 +180,10 @@ export default function CallStudio() {
   // ── TTS: try ElevenLabs first, fall back to Web Speech ─────────────────
   const speak = useCallback(async (text: string, agent: AgentName, afterSpeak?: () => void) => {
     mute();
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    finalTextRef.current = "";
+    accumulatedTextRef.current = "";
     setAgentState("speaking");
     agentStateRef.current = "speaking";
 
@@ -191,7 +195,10 @@ export default function CallStudio() {
       } else {
         setAgentState("listening");
         agentStateRef.current = "listening";
-        startListening();
+        accumulatedTextRef.current = ""; // clear any echo garbage
+        setTimeout(() => {
+          if (isActiveRef.current && agentStateRef.current === "listening") startListening();
+        }, 250); // let echo die down before mic opens
       }
     };
 
