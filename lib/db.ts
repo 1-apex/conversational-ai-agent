@@ -24,4 +24,5 @@ export async function ensureSchema() {
       created_at   TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment TEXT`;
 }

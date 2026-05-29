@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       agentsUsed?: string[];
       turns?:      unknown;
       brief?:      unknown;
+      sentiment?:  string;
     };
 
     if (!body.id || !body.startedAt) {
@@ -24,14 +25,15 @@ export async function POST(req: NextRequest) {
 
     await ensureSchema();
     await db`
-      INSERT INTO calls (id, started_at, duration, agents_used, turns, brief)
+      INSERT INTO calls (id, started_at, duration, agents_used, turns, brief, sentiment)
       VALUES (
         ${body.id},
         ${body.startedAt},
         ${body.duration ?? null},
         ${body.agentsUsed ?? []},
         ${JSON.stringify(body.turns ?? [])},
-        ${JSON.stringify(body.brief ?? null)}
+        ${JSON.stringify(body.brief ?? null)},
+        ${body.sentiment ?? "neutral"}
       )
       ON CONFLICT (id) DO NOTHING
     `;

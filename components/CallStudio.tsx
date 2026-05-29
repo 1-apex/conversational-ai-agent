@@ -620,6 +620,7 @@ export default function CallStudio() {
         agentsUsed,
         turns:      currentTurns,
         brief:      callBrief,
+        sentiment:  sentiment,
       }),
     }).catch(() => { /* non-fatal */ });
 
