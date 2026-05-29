@@ -53,6 +53,28 @@ export default function CallStudio() {
   const [elapsed,      setElapsed]      = useState(0);
   const [brief,        setBrief]        = useState<CallBriefData | null>(null);
   const [briefError,   setBriefError]   = useState("");
+  const [quotaUsed,    setQuotaUsed]    = useState(0);
+
+  const EL_QUOTA_LIMIT = 10_000;
+  const EL_QUOTA_WARN  = 8_000;
+
+  function quotaKey() {
+    const d = new Date();
+    return `kyron_el_quota_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  useEffect(() => {
+    const stored = parseInt(localStorage.getItem(quotaKey()) ?? "0", 10);
+    setQuotaUsed(isNaN(stored) ? 0 : stored);
+  }, []);
+
+  function addToQuota(chars: number) {
+    const key = quotaKey();
+    const prev = parseInt(localStorage.getItem(key) ?? "0", 10);
+    const next = (isNaN(prev) ? 0 : prev) + chars;
+    localStorage.setItem(key, String(next));
+    setQuotaUsed(next);
+  }
 
   // Refs for async-safe access
   const isActiveRef       = useRef(false);
@@ -185,6 +207,7 @@ export default function CallStudio() {
       if (res.status === 501) throw new Error("no-key"); // no ElevenLabs key → fall back
       if (!res.ok) throw new Error(`tts-${res.status}`);
 
+      addToQuota(cleaned.length);
       const blob  = await res.blob();
       const url   = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -469,6 +492,17 @@ export default function CallStudio() {
           )}
 
           <div className="ml-auto flex items-center gap-4">
+            {quotaUsed >= EL_QUOTA_WARN && (
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                quotaUsed >= EL_QUOTA_LIMIT
+                  ? "bg-red-100 text-red-600"
+                  : "bg-amber-100 text-amber-700"
+              }`}>
+                {quotaUsed >= EL_QUOTA_LIMIT
+                  ? "Voice quota full"
+                  : `Voice ${Math.round(quotaUsed / 100) / 10}k / 10k chars`}
+              </span>
+            )}
             {(status === "active" || status === "ending" || status === "done") && (
               <span className="font-mono text-sm text-gray-600 tabular-nums">{fmtTime(elapsed)}</span>
             )}
