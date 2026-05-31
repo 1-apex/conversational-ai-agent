@@ -10,7 +10,6 @@ import AgentBadge from "./AgentBadge";
 import AgentTranscript from "./AgentTranscript";
 import CubePulse from "./CubePulse";
 import CallBrief from "./CallBrief";
-import SettingsPanel, { CallSettings } from "./SettingsPanel";
 
 // ── SpeechRecognition type declarations ───────────────────────────────────
 interface SRAlternative { readonly transcript: string; }
@@ -46,26 +45,21 @@ function toSpeakable(text: string) {
 }
 
 export default function CallStudio() {
-  const [status,       setStatus]       = useState<CallStatus>("idle");
-  const [agentState,   setAgentState]   = useState<AgentState>("idle");
-  const [activeAgent,  setActiveAgent]  = useState<AgentName>("orchestrator");
-  const [turns,        setTurns]        = useState<AgentTurn[]>([]);
-  const [interimText,  setInterimText]  = useState("");
-  const [elapsed,      setElapsed]      = useState(0);
-  const [brief,        setBrief]        = useState<CallBriefData | null>(null);
-  const [briefError,   setBriefError]   = useState("");
-  const [quotaUsed,    setQuotaUsed]    = useState(0);
-  const [transferring, setTransferring] = useState(false);
-  const [sentiment,    setSentiment]    = useState<"positive"|"neutral"|"negative">("neutral");
+  const [status,         setStatus]         = useState<CallStatus>("idle");
+  const [agentState,     setAgentState]     = useState<AgentState>("idle");
+  const [activeAgent,    setActiveAgent]    = useState<AgentName>("orchestrator");
+  const [turns,          setTurns]          = useState<AgentTurn[]>([]);
+  const [interimText,    setInterimText]    = useState("");
+  const [elapsed,        setElapsed]        = useState(0);
+  const [brief,          setBrief]          = useState<CallBriefData | null>(null);
+  const [briefError,     setBriefError]     = useState("");
+  const [quotaUsed,      setQuotaUsed]      = useState(0);
+  const [transferring,   setTransferring]   = useState(false);
+  const [sentiment,      setSentiment]      = useState<"positive"|"neutral"|"negative">("neutral");
   const [speakingTurnId, setSpeakingTurnId] = useState("");
 
-  const DEFAULT_SETTINGS: CallSettings = { silenceDebounceMs: 1600, silenceWatcherMs: 8000, maxCheckins: 2, pushToTalk: false };
-  const [settings,     setSettings]     = useState<CallSettings>(DEFAULT_SETTINGS);
-  const [showSettings, setShowSettings] = useState(false);
-  const settingsRef = useRef<CallSettings>(DEFAULT_SETTINGS);
-
-  const callIdRef      = useRef("");
-  const callStartRef   = useRef("");
+  const callIdRef    = useRef("");
+  const callStartRef = useRef("");
 
   const EL_QUOTA_LIMIT = 10_000;
   const EL_QUOTA_WARN  = 8_000;
@@ -81,7 +75,7 @@ export default function CallStudio() {
   }, []);
 
   function addToQuota(chars: number) {
-    const key = quotaKey();
+    const key  = quotaKey();
     const prev = parseInt(localStorage.getItem(key) ?? "0", 10);
     const next = (isNaN(prev) ? 0 : prev) + chars;
     localStorage.setItem(key, String(next));
@@ -89,37 +83,22 @@ export default function CallStudio() {
   }
 
   // Refs for async-safe access
-  const isActiveRef       = useRef(false);
-  const agentStateRef     = useRef<AgentState>("idle");
-  const activeAgentRef    = useRef<AgentName>("orchestrator");
-  const turnsRef          = useRef<AgentTurn[]>([]);
-  const finalTextRef      = useRef("");
+  const isActiveRef        = useRef(false);
+  const agentStateRef      = useRef<AgentState>("idle");
+  const activeAgentRef     = useRef<AgentName>("orchestrator");
+  const turnsRef           = useRef<AgentTurn[]>([]);
+  const finalTextRef       = useRef("");
   const accumulatedTextRef = useRef("");
   const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startTimeRef      = useRef(0);
-  const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recognitionRef    = useRef<SpeechRecognitionInstance | null>(null);
-  const interruptRecRef   = useRef<SpeechRecognitionInstance | null>(null);
-  const currentAudioRef   = useRef<HTMLAudioElement | null>(null);
-  const silenceWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastSpeechTimeRef = useRef(0);
-  const checkinCountRef   = useRef(0);
-  const pttHeldRef        = useRef(false);
-
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("inogen_settings");
-      if (saved) {
-        const parsed = JSON.parse(saved) as CallSettings;
-        setSettings(parsed);
-        settingsRef.current = parsed;
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  // Sync settingsRef whenever settings state changes
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  const startTimeRef       = useRef(0);
+  const timerRef           = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef     = useRef<SpeechRecognitionInstance | null>(null);
+  const interruptRecRef    = useRef<SpeechRecognitionInstance | null>(null);
+  const currentAudioRef    = useRef<HTMLAudioElement | null>(null);
+  const silenceWatcherRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSpeechTimeRef  = useRef(0);
+  const checkinCountRef    = useRef(0);
+  const lastAgentTextRef   = useRef("");
 
   // Sync state → refs
   useEffect(() => { agentStateRef.current  = agentState;  }, [agentState]);
@@ -130,7 +109,7 @@ export default function CallStudio() {
   function mute() {
     if (currentAudioRef.current) {
       const audio = currentAudioRef.current;
-      audio.onended = null; // prevent fallback triggering after forced stop
+      audio.onended = null;
       audio.onerror = null;
       audio.pause();
       audio.src = "";
@@ -140,7 +119,7 @@ export default function CallStudio() {
     stopInterruptListener();
   }
 
-  // ── Interrupt listener — lets user speak during agent TTS ────────────────
+  // ── Interrupt listener — lets user speak during agent TTS ─────────────
   function stopInterruptListener() {
     interruptRecRef.current?.abort();
     interruptRecRef.current = null;
@@ -148,47 +127,53 @@ export default function CallStudio() {
 
   function startInterruptListener() {
     if (!isActiveRef.current) return;
-    const w = window as WindowWithSpeech;
+    const w    = window as WindowWithSpeech;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) return;
     const rec = new Ctor();
-    rec.continuous = false;
+    rec.continuous     = false;
     rec.interimResults = false;
-    rec.lang = "en-US";
+    rec.lang           = "en-US";
     rec.onresult = (event: SREvent) => {
       if (agentStateRef.current !== "speaking" || !isActiveRef.current) return;
-      const text = event.results[0]?.[0]?.transcript?.trim() ?? "";
-      if (text.split(/\s+/).length < 2) return; // ignore single-word echo artifacts
+      const text  = event.results[0]?.[0]?.transcript?.trim() ?? "";
+      const words = text.split(/\s+/);
+      if (words.length < 4) return; // too short — likely echo artifact
+
+      // Skip if >50% of words overlap with what the agent just said
+      if (lastAgentTextRef.current) {
+        const agentWords = new Set(lastAgentTextRef.current.toLowerCase().split(/\s+/));
+        const overlap    = words.filter(w => agentWords.has(w.toLowerCase())).length;
+        if (overlap / words.length > 0.5) return;
+      }
+
       stopInterruptListener();
       mute();
       accumulatedTextRef.current = "";
-      finalTextRef.current = "";
+      finalTextRef.current       = "";
       callAgent(text);
     };
     rec.onend = () => {
       interruptRecRef.current = null;
       if (agentStateRef.current === "speaking" && isActiveRef.current) {
-        setTimeout(() => { if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener(); }, 200);
+        setTimeout(() => {
+          if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener();
+        }, 500);
       }
     };
     rec.onerror = () => {
       interruptRecRef.current = null;
       if (agentStateRef.current === "speaking" && isActiveRef.current) {
-        setTimeout(() => { if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener(); }, 300);
+        setTimeout(() => {
+          if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener();
+        }, 500);
       }
     };
     interruptRecRef.current = rec;
     try { rec.start(); } catch { /* ignore */ }
   }
 
-  function updateSettings(patch: Partial<CallSettings>) {
-    const next = { ...settingsRef.current, ...patch };
-    setSettings(next);
-    settingsRef.current = next;
-    localStorage.setItem("inogen_settings", JSON.stringify(next));
-  }
-
-  // ── Silence watcher — fires a check-in if user goes quiet too long ───────
+  // ── Silence watcher — fires a check-in if user goes quiet too long ────
   function clearSilenceWatcher() {
     if (silenceWatcherRef.current) {
       clearInterval(silenceWatcherRef.current);
@@ -197,20 +182,20 @@ export default function CallStudio() {
   }
 
   function armSilenceWatcher() {
-    if (silenceWatcherRef.current) return; // already armed
+    if (silenceWatcherRef.current) return;
     lastSpeechTimeRef.current = Date.now();
     silenceWatcherRef.current = setInterval(() => {
       if (!isActiveRef.current || agentStateRef.current !== "listening") {
         clearSilenceWatcher();
         return;
       }
-      if (Date.now() - lastSpeechTimeRef.current < settingsRef.current.silenceWatcherMs) return;
+      if (Date.now() - lastSpeechTimeRef.current < 8000) return;
 
       checkinCountRef.current++;
-      lastSpeechTimeRef.current = Date.now(); // prevent re-fire until next interval
+      lastSpeechTimeRef.current = Date.now();
       clearSilenceWatcher();
 
-      if (checkinCountRef.current >= settingsRef.current.maxCheckins) return;
+      if (checkinCountRef.current >= 2) return;
 
       const msg = checkinCountRef.current === 1
         ? "Just checking — are you still there?"
@@ -222,11 +207,11 @@ export default function CallStudio() {
       };
       setTurns((prev) => [...prev, checkInTurn]);
       turnsRef.current = [...turnsRef.current, checkInTurn];
-      speak(msg, activeAgentRef.current); // onEnd → startListening → re-arms watcher
+      speak(msg, activeAgentRef.current);
     }, 1000);
   }
 
-  // ── Web Speech fallback (ElevenLabs error recovery only) ─────────────────
+  // ── Web Speech fallback (ElevenLabs error recovery only) ──────────────
   function webSpeechFallback(text: string, onEnd: () => void) {
     const synth = window.speechSynthesis;
     if (!synth) { onEnd(); return; }
@@ -251,17 +236,19 @@ export default function CallStudio() {
     }, 50);
   }
 
-  // ── TTS: try ElevenLabs first, fall back to Web Speech ─────────────────
+  // ── TTS: try ElevenLabs first, fall back to Web Speech ────────────────
   const speak = useCallback(async (text: string, agent: AgentName, afterSpeak?: () => void) => {
-    mute(); // also calls stopInterruptListener internally
+    mute();
     recognitionRef.current?.abort();
-    recognitionRef.current = null;
-    finalTextRef.current = "";
+    recognitionRef.current   = null;
+    finalTextRef.current     = "";
     accumulatedTextRef.current = "";
     setAgentState("speaking");
     agentStateRef.current = "speaking";
 
     const cleaned = toSpeakable(text);
+    lastAgentTextRef.current = cleaned; // track for echo detection in interrupt listener
+
     const onEnd = () => {
       stopInterruptListener();
       setSpeakingTurnId("");
@@ -270,17 +257,17 @@ export default function CallStudio() {
         afterSpeak();
       } else {
         setAgentState("listening");
-        agentStateRef.current = "listening";
-        accumulatedTextRef.current = ""; // clear any echo garbage
+        agentStateRef.current    = "listening";
+        accumulatedTextRef.current = "";
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
-        }, 250); // let echo die down before mic opens
+        }, 250);
       }
     };
 
     try {
       const controller = new AbortController();
-      const ttsTimeout = setTimeout(() => controller.abort(), 4000); // fail fast if ElevenLabs hangs
+      const ttsTimeout = setTimeout(() => controller.abort(), 4000);
 
       const res = await fetch("/api/tts", {
         method:  "POST",
@@ -295,11 +282,10 @@ export default function CallStudio() {
 
       addToQuota(cleaned.length);
 
-      // MediaSource streaming — audio begins after first chunk, not after full download
       const MIME = "audio/mpeg";
       if (res.body && typeof MediaSource !== "undefined" && MediaSource.isTypeSupported(MIME)) {
-        const ms  = new MediaSource();
-        const url = URL.createObjectURL(ms);
+        const ms    = new MediaSource();
+        const url   = URL.createObjectURL(ms);
         const audio = new Audio(url);
         currentAudioRef.current = audio;
 
@@ -317,7 +303,7 @@ export default function CallStudio() {
         ms.addEventListener("sourceopen", () => {
           const sb = ms.addSourceBuffer(MIME);
           const queue: Uint8Array<ArrayBuffer>[] = [];
-          let appending = false;
+          let appending  = false;
           let streamDone = false;
 
           function flush() {
@@ -352,7 +338,7 @@ export default function CallStudio() {
         await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
         setTimeout(() => {
           if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener();
-        }, 200);
+        }, 500);
       } else {
         // Fallback: buffer full response then play (Safari / no MediaSource)
         const blob  = await res.blob();
@@ -374,7 +360,7 @@ export default function CallStudio() {
         await audio.play().catch(() => webSpeechFallback(cleaned, onEnd));
         setTimeout(() => {
           if (agentStateRef.current === "speaking" && isActiveRef.current) startInterruptListener();
-        }, 200);
+        }, 500);
       }
     } catch {
       webSpeechFallback(cleaned, onEnd);
@@ -384,11 +370,9 @@ export default function CallStudio() {
   // ── STT: listen continuously, accumulate across sessions, debounce send ──
   function startListening() {
     if (!isActiveRef.current) return;
-    const w = window as WindowWithSpeech;
+    const w    = window as WindowWithSpeech;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) return;
-    // In PTT mode, only run when space is held
-    if (settingsRef.current.pushToTalk && !pttHeldRef.current) return;
 
     finalTextRef.current = "";
     setInterimText("");
@@ -399,9 +383,8 @@ export default function CallStudio() {
     rec.lang           = "en-US";
 
     rec.onresult = (event: SREvent) => {
-      // User is speaking — reset silence tracking
       lastSpeechTimeRef.current = Date.now();
-      checkinCountRef.current = 0;
+      checkinCountRef.current   = 0;
 
       let transcript = "";
       for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
@@ -418,10 +401,8 @@ export default function CallStudio() {
       finalTextRef.current = "";
 
       if (chunk && isActiveRef.current) {
-        // Append to anything already said in this turn
         accumulatedTextRef.current = (accumulatedTextRef.current + " " + chunk).trim();
 
-        // Reset the silence timer — user may still be mid-sentence
         if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
         processingTimerRef.current = setTimeout(() => {
           processingTimerRef.current = null;
@@ -431,14 +412,13 @@ export default function CallStudio() {
             setInterimText("");
             callAgent(full);
           }
-        }, settingsRef.current.silenceDebounceMs);
+        }, 2500); // wait 2.5s of silence before sending
 
-        // Restart immediately so we catch the continuation
+        // Restart to catch continuation
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
-        }, 120);
+        }, 300);
       } else if (isActiveRef.current && agentStateRef.current === "listening") {
-        // Pure silence — restart
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
         }, 400);
@@ -457,7 +437,7 @@ export default function CallStudio() {
     recognitionRef.current = rec;
     try {
       rec.start();
-      armSilenceWatcher(); // start counting silence from now
+      armSilenceWatcher();
     } catch {
       setTimeout(() => {
         if (isActiveRef.current && agentStateRef.current === "listening") startListening();
@@ -469,7 +449,6 @@ export default function CallStudio() {
   const callAgent = useCallback(async (userInput: string) => {
     if (!isActiveRef.current) return;
 
-    // Cancel any pending speech/silence timers
     clearSilenceWatcher();
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
     accumulatedTextRef.current = "";
@@ -477,7 +456,6 @@ export default function CallStudio() {
     recognitionRef.current?.abort();
     recognitionRef.current = null;
 
-    // Add user turn to history (skip on greeting trigger)
     let snapshot = turnsRef.current;
     if (userInput) {
       const userTurn: AgentTurn = { id: genId(), role: "user", content: userInput, timestamp: Date.now() };
@@ -504,15 +482,12 @@ export default function CallStudio() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as AgentApiResponse;
 
-      // Switch agent if handoff requested
       const isHandoff = !!data.handoff && data.handoff !== activeAgentRef.current;
       if (isHandoff) {
         setActiveAgent(data.handoff!);
         activeAgentRef.current = data.handoff!;
       }
 
-      // Save turn attributed to whoever actually generated it (data.agent = orchestrator,
-      // not the new agent) so history stays coherent for the incoming agent
       const agentTurn: AgentTurn = {
         id: genId(), role: "agent", content: data.reply,
         agent: data.agent, timestamp: Date.now(),
@@ -523,8 +498,6 @@ export default function CallStudio() {
 
       setSpeakingTurnId(agentTurn.id);
       if (isHandoff) {
-        // Speak the transition message, then immediately trigger a greeting
-        // from the new agent so it can introduce itself before listening
         speak(data.reply, data.agent, () => {
           if (isActiveRef.current) callAgent("");
         });
@@ -539,11 +512,10 @@ export default function CallStudio() {
 
   // ── Call lifecycle ─────────────────────────────────────────────────────
   const startCall = useCallback(async () => {
-    // Reset
-    setTurns([]);           turnsRef.current        = [];
-    setActiveAgent("orchestrator"); activeAgentRef.current = "orchestrator";
-    setBrief(null);         setBriefError("");
-    setElapsed(0);          finalTextRef.current    = "";
+    setTurns([]);                    turnsRef.current       = [];
+    setActiveAgent("orchestrator");  activeAgentRef.current = "orchestrator";
+    setBrief(null);                  setBriefError("");
+    setElapsed(0);                   finalTextRef.current   = "";
     setSentiment("neutral");
     setSpeakingTurnId("");
     accumulatedTextRef.current = "";
@@ -551,26 +523,24 @@ export default function CallStudio() {
 
     callIdRef.current    = genId();
     callStartRef.current = new Date().toISOString();
-    checkinCountRef.current = 0;
+    checkinCountRef.current   = 0;
     lastSpeechTimeRef.current = Date.now();
-    isActiveRef.current = true;
+    isActiveRef.current       = true;
     setStatus("active");
     setAgentState("thinking");
     agentStateRef.current = "thinking";
 
-    // Timer
     startTimeRef.current = Date.now();
     timerRef.current = setInterval(
       () => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)),
       1000
     );
 
-    // Trigger greeting
     await callAgent("");
   }, [callAgent]);
 
   const endCall = useCallback(async () => {
-    isActiveRef.current = false;
+    isActiveRef.current   = false;
     setAgentState("idle");
     agentStateRef.current = "idle";
     setStatus("ending");
@@ -588,7 +558,6 @@ export default function CallStudio() {
 
     const currentTurns = turnsRef.current;
 
-    // Convert AgentTurn[] to TranscriptTurn format for the brief endpoint
     const briefTurns = currentTurns.map((t) => ({
       id: t.id, speaker: t.role === "agent" ? "agent" : "prospect" as "agent" | "prospect",
       text: t.content, timestamp: t.timestamp, entities: EMPTY_ENTITY_MAP,
@@ -597,9 +566,9 @@ export default function CallStudio() {
     let callBrief: CallBriefData | null = null;
     try {
       const res = await fetch("/api/extract", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turns: briefTurns, duration }),
+        body:    JSON.stringify({ turns: briefTurns, duration }),
       });
       if (!res.ok) throw new Error(await res.text());
       callBrief = (await res.json()) as CallBriefData;
@@ -608,19 +577,18 @@ export default function CallStudio() {
       setBriefError(err instanceof Error ? err.message : "Brief generation failed");
     }
 
-    // Log call to database (fire-and-forget — never blocks UI)
     const agentsUsed = [...new Set(currentTurns.filter(t => t.agent).map(t => t.agent!))];
     fetch("/api/calls", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id:         callIdRef.current,
-        startedAt:  callStartRef.current,
+        id:        callIdRef.current,
+        startedAt: callStartRef.current,
         duration,
         agentsUsed,
-        turns:      currentTurns,
-        brief:      callBrief,
-        sentiment:  sentiment,
+        turns:     currentTurns,
+        brief:     callBrief,
+        sentiment: sentiment,
       }),
     }).catch(() => { /* non-fatal */ });
 
@@ -637,46 +605,13 @@ export default function CallStudio() {
   }, [endCall]);
 
   const handleNewCall = useCallback(() => {
-    setStatus("idle");   setBrief(null);     setBriefError("");
-    setTurns([]);        setElapsed(0);      setActiveAgent("orchestrator");
+    setStatus("idle");  setBrief(null);   setBriefError("");
+    setTurns([]);       setElapsed(0);    setActiveAgent("orchestrator");
     setAgentState("idle");
     setTransferring(false);
     setSentiment("neutral");
     setSpeakingTurnId("");
   }, []);
-
-  // ── Push-to-talk keyboard handlers ───────────────────────────────────────
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || !settingsRef.current.pushToTalk || e.repeat) return;
-      if (!isActiveRef.current || agentStateRef.current !== "listening") return;
-      e.preventDefault();
-      pttHeldRef.current = true;
-      recognitionRef.current?.abort();
-      accumulatedTextRef.current = "";
-      finalTextRef.current = "";
-      startListening();
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || !settingsRef.current.pushToTalk || !pttHeldRef.current) return;
-      pttHeldRef.current = false;
-      recognitionRef.current?.stop();
-      setTimeout(() => {
-        const full = accumulatedTextRef.current;
-        if (full && isActiveRef.current && agentStateRef.current === "listening") {
-          if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
-          accumulatedTextRef.current = "";
-          callAgent(full);
-        }
-      }, 80);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [callAgent]);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -692,11 +627,11 @@ export default function CallStudio() {
   const SENT_POS = ["great","thanks","thank","perfect","yes","interested","helpful","good","love","excellent","sure","definitely","absolutely","appreciate","wonderful","happy","excited"];
   const SENT_NEG = ["no","not interested","cancel","disappointed","frustrated","expensive","problem","issue","wrong","bad","terrible","refuse","unhappy","difficult","complicated","too much","confusing"];
   function scoreSentiment(text: string): "positive"|"neutral"|"negative" {
-    const l = text.toLowerCase();
+    const l   = text.toLowerCase();
     const pos = SENT_POS.filter(w => l.includes(w)).length;
     const neg = SENT_NEG.filter(w => l.includes(w)).length;
     if (pos > neg + 1) return "positive";
-    if (neg > pos) return "negative";
+    if (neg > pos)     return "negative";
     return "neutral";
   }
 
@@ -705,9 +640,8 @@ export default function CallStudio() {
 
   return (
     <div className="flex flex-col h-full relative">
-      <SettingsPanel open={showSettings} settings={settings} onClose={() => setShowSettings(false)} onChange={updateSettings} />
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* ── Header ────────────────────────────────────────────────────── */}
       <header className="glass-panel border-b border-white/20 px-6 py-3 shrink-0">
         <div className="max-w-6xl mx-auto flex items-center gap-3">
           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 transition-all ${agentMeta.dot}`}>
@@ -771,20 +705,12 @@ export default function CallStudio() {
             )}
             <a
               href="/dashboard"
-              target="_blank"
               className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
               Dashboard
             </a>
-            <button
-              onClick={() => setShowSettings(s => !s)}
-              className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Settings"
-            >
-              ⚙
-            </button>
             {status === "ending" && <span className="text-xs text-gray-400">Generating brief…</span>}
-            {status === "done"   && (
+            {status === "done" && (
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
                 <span className="text-xs text-emerald-600 font-medium">Brief ready</span>
@@ -794,7 +720,7 @@ export default function CallStudio() {
         </div>
       </header>
 
-      {/* ── Body ────────────────────────────────────────────────────────── */}
+      {/* ── Body ──────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden max-w-6xl w-full mx-auto">
 
         {/* Left — Sphere */}
@@ -853,7 +779,6 @@ export default function CallStudio() {
               agentState={agentState}
               activeAgent={activeAgent}
               speakingTurnId={speakingTurnId}
-              pushToTalk={settings.pushToTalk}
             />
           )}
         </div>

@@ -5,15 +5,14 @@ import { AgentTurn, AgentName, AgentState } from "@/lib/types";
 import { AGENT_META } from "./AgentBadge";
 
 interface Props {
-  turns: AgentTurn[];
-  interimText: string;
-  agentState: AgentState;
-  activeAgent: AgentName;
+  turns:          AgentTurn[];
+  interimText:    string;
+  agentState:     AgentState;
+  activeAgent:    AgentName;
   speakingTurnId: string;
-  pushToTalk: boolean;
 }
 
-export default function AgentTranscript({ turns, interimText, agentState, activeAgent, speakingTurnId, pushToTalk }: Props) {
+export default function AgentTranscript({ turns, interimText, agentState, activeAgent, speakingTurnId }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +42,7 @@ export default function AgentTranscript({ turns, interimText, agentState, active
                 className={`shrink-0 w-7 h-7 rounded-full text-white text-[10px] font-bold flex items-center justify-center mt-0.5 ${
                   isAgent
                     ? (meta ? meta.dot : "bg-teal-500")
-                    : "bg-gradient-to-br from-violet-500 to-purple-600"
+                    : "bg-linear-to-br from-violet-500 to-purple-600"
                 }`}
               >
                 {isAgent ? (turn.agent?.[0]?.toUpperCase() ?? "A") : "U"}
@@ -76,7 +75,7 @@ export default function AgentTranscript({ turns, interimText, agentState, active
         {/* Interim user text while speaking */}
         {interimText && agentState === "listening" && (
           <div className="flex gap-2.5 flex-row-reverse animate-fade-in">
-            <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5 opacity-60">
+            <div className="shrink-0 w-7 h-7 rounded-full bg-linear-to-br from-violet-400 to-purple-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5 opacity-60">
               U
             </div>
             <div className="max-w-[78%] flex flex-col gap-1 items-end">
@@ -86,15 +85,6 @@ export default function AgentTranscript({ turns, interimText, agentState, active
                 <span className="inline-block w-0.5 h-3.5 bg-gray-400 rounded ml-1 animate-pulse" />
               </div>
             </div>
-          </div>
-        )}
-
-        {/* PTT hint */}
-        {pushToTalk && agentState === "listening" && turns.length > 0 && (
-          <div className="text-center py-2">
-            <span className="text-[11px] text-gray-400 bg-gray-100 rounded-full px-3 py-1">
-              Hold <kbd className="font-mono bg-white border border-gray-200 rounded px-1">Space</kbd> to speak
-            </span>
           </div>
         )}
 
