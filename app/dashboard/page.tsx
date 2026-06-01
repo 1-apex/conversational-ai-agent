@@ -83,13 +83,34 @@ function agentUsage(calls: CallRow[]) {
 
 // Extract keyword frequencies from all brief summaries
 const STOP = new Set([
-  "the","a","an","and","or","but","in","on","at","to","for","of","with","is","was",
-  "are","were","be","been","being","have","has","had","do","does","did","will",
-  "would","could","should","may","might","i","we","you","he","she","they","it",
-  "this","that","these","those","our","your","their","my","his","her","its","about",
-  "from","by","as","if","so","no","not","just","also","more","can","what","how",
-  "when","who","which","there","their","then","them","they","said","very","much",
-  "like","well","call","want","need","asked","inquired","looking","interested",
+  // articles / conjunctions / prepositions
+  "the","a","an","and","or","but","in","on","at","to","for","of","with","by","as",
+  "from","into","over","through","about","after","before","between","during","under",
+  // pronouns
+  "i","we","you","he","she","they","it","this","that","these","those","our","your",
+  "their","my","his","her","its","them","him","her","us","who","which","what",
+  // auxiliary verbs
+  "is","was","are","were","be","been","being","have","has","had","do","does","did",
+  "will","would","could","should","may","might","shall","must","need","ought",
+  // common words
+  "if","so","no","not","just","also","more","very","much","like","well","then",
+  "there","here","when","how","said","even","still","already","now","yes","thank",
+  "thanks","sure","okay","yes","know","think","time","back","get","got","take",
+  "make","want","need","use","used","using","come","came","going","went","one",
+  "two","three","four","five","six","seven","eight","nine","ten","new","any","all",
+  "some","other","such","same","each","both","few","many","own","than","then",
+  // call transcript filler
+  "call","caller","called","agent","customer","specialist","spoke","speaking",
+  "discussed","discussion","mentioned","mention","asked","asking","expressed",
+  "inquired","inquiry","inquiry","provided","provide","offering","offered","noted",
+  "said","indicated","stated","explained","ended","ending","outcome","action",
+  "transfer","transferred","connect","connected","regarding","information","details",
+  "further","specific","another","during","while","without","however","although",
+  "because","therefore","since","thus","either","neither","whether","upon","above",
+  "below","throughout","around","toward","towards","within","along","against",
+  "following","followed","resulted","result","taken","take","given","give","able",
+  "unable","tried","looking","looked","happy","helped","help","right","know","knew",
+  "call","calls","brief","topic","topics","question","questions","response","answer",
 ]);
 
 function buildWordMap(calls: CallRow[]): [string, number][] {

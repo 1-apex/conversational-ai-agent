@@ -44,6 +44,31 @@ function toSpeakable(text: string) {
     .trim();
 }
 
+// Post-process browser STT output to fix Inogen-specific misrecognitions
+const TRANSCRIPT_CORRECTIONS: [RegExp, string][] = [
+  [/\bocean\s+grove\b/gi,             "Inogen Rove"],
+  [/\bocean\s+rove\b/gi,              "Inogen Rove"],
+  [/\bin\s*a\s*gen\b/gi,              "Inogen"],
+  [/\binogen\s+grove\b/gi,            "Inogen Rove"],
+  [/\bgrove\s+6\b/gi,                 "Rove 6"],
+  [/\bgrove\s+4\b/gi,                 "Rove 4"],
+  [/\bgrove\s+3\b/gi,                 "Rove 3"],
+  [/\bone\s+g\s*5\b/gi,               "One G5"],
+  [/\bone\s+g\s*4\b/gi,               "One G4"],
+  [/\bone\s+g\s*3\b/gi,               "One G3"],
+  [/\bg\s*five\b/gi,                  "G5"],
+  [/\bg\s*four\b/gi,                  "G4"],
+  [/\bg\s*three\b/gi,                 "G3"],
+  [/\bportable\s+oxygen\s+concentrators?\b/gi, "portable oxygen concentrator"],
+  [/\bP\s*O\s*C\b/gi,                 "POC"],
+];
+
+function correctTranscript(text: string): string {
+  let r = text;
+  for (const [pattern, replacement] of TRANSCRIPT_CORRECTIONS) r = r.replace(pattern, replacement);
+  return r;
+}
+
 export default function CallStudio() {
   const [status,         setStatus]         = useState<CallStatus>("idle");
   const [agentState,     setAgentState]     = useState<AgentState>("idle");
@@ -136,7 +161,7 @@ export default function CallStudio() {
     rec.lang           = "en-US";
     rec.onresult = (event: SREvent) => {
       if (agentStateRef.current !== "speaking" || !isActiveRef.current) return;
-      const text  = event.results[0]?.[0]?.transcript?.trim() ?? "";
+      const text  = correctTranscript(event.results[0]?.[0]?.transcript?.trim() ?? "");
       const words = text.split(/\s+/);
       if (words.length < 4) return; // too short — likely echo artifact
 
@@ -390,7 +415,7 @@ export default function CallStudio() {
       for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       setInterimText(transcript);
       if (event.results[event.results.length - 1].isFinal) {
-        finalTextRef.current = transcript.trim();
+        finalTextRef.current = correctTranscript(transcript.trim());
         setInterimText("");
       }
     };
@@ -577,7 +602,9 @@ export default function CallStudio() {
       setBriefError(err instanceof Error ? err.message : "Brief generation failed");
     }
 
-    const agentsUsed = [...new Set(currentTurns.filter(t => t.agent).map(t => t.agent!))];
+    const agentsUsed    = [...new Set(currentTurns.filter(t => t.agent).map(t => t.agent!))];
+    const userTexts     = currentTurns.filter(t => t.role === "user").map(t => t.content);
+    const finalSentiment = computeFinalSentiment(userTexts);
     fetch("/api/calls", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -588,7 +615,7 @@ export default function CallStudio() {
         agentsUsed,
         turns:     currentTurns,
         brief:     callBrief,
-        sentiment: sentiment,
+        sentiment: finalSentiment,
       }),
     }).catch(() => { /* non-fatal */ });
 
@@ -626,10 +653,25 @@ export default function CallStudio() {
   // ── Sentiment scoring ─────────────────────────────────────────────────
   const SENT_POS = ["great","thanks","thank","perfect","yes","interested","helpful","good","love","excellent","sure","definitely","absolutely","appreciate","wonderful","happy","excited"];
   const SENT_NEG = ["no","not interested","cancel","disappointed","frustrated","expensive","problem","issue","wrong","bad","terrible","refuse","unhappy","difficult","complicated","too much","confusing"];
+
+  // Per-turn indicator (user message only — for live display)
   function scoreSentiment(text: string): "positive"|"neutral"|"negative" {
     const l   = text.toLowerCase();
     const pos = SENT_POS.filter(w => l.includes(w)).length;
     const neg = SENT_NEG.filter(w => l.includes(w)).length;
+    if (pos > neg + 1) return "positive";
+    if (neg > pos)     return "negative";
+    return "neutral";
+  }
+
+  // Aggregate across ALL user turns — used when logging the call
+  function computeFinalSentiment(userTexts: string[]): "positive"|"neutral"|"negative" {
+    let pos = 0, neg = 0;
+    for (const t of userTexts) {
+      const l = t.toLowerCase();
+      pos += SENT_POS.filter(w => l.includes(w)).length;
+      neg += SENT_NEG.filter(w => l.includes(w)).length;
+    }
     if (pos > neg + 1) return "positive";
     if (neg > pos)     return "negative";
     return "neutral";
