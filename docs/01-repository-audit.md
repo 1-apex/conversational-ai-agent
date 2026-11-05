@@ -181,7 +181,7 @@ Barge-in with echo rejection, 2.5 s turn debounce, STT product-name corrections,
 
 Findings above describe commit `ef361c0` and aren't rewritten. Line numbers refer to that commit.
 
-**Phase 0, 2026-11-05 (branch `phase-0-risk-reduction`):**
+**Phase 0, 2026-11-05 (merged and deployed, PR #1):**
 
 | Finding | Status | What changed |
 | --- | --- | --- |
@@ -203,6 +203,26 @@ Findings above describe commit `ef361c0` and aren't rewritten. Line numbers refe
 | R-37 | P2 | The upgraded lint config flagged a state update in an effect for the quota meter | **Fixed** with `useSyncExternalStore` |
 
 R-30 was confirmed in testing: spoken text loses its em dashes, as in "didn't catch that could you say".
+
+**Phase 1, part 1, 2026-11-05 (branch `phase-1-foundations`). The parts that need no database:**
+
+| Finding | Status | What changed |
+| --- | --- | --- |
+| R-08 | **Partial** | Truncated or malformed model output is never spoken as raw JSON. Replies still aren't checked for safety or accuracy (Phase 2) |
+| R-11 | **Partial** | 103 Vitest tests and a CI workflow. CI hasn't run yet, and there are no end-to-end browser tests |
+| R-12 | **Fixed** | Zod validation and size limits on every route; history sent to the model is capped at 40 turns |
+| R-13 | **Fixed in code** | All routes are rate limited; the client-forged `x-forwarded-for` entry is ignored and keys are hashed. Vercel's header behaviour hasn't been verified on the live deployment |
+| R-14 | **Fixed** | Browser speech fallback uses local voices only |
+| R-16 | **Partial** | Uniform error envelope, correlation IDs and an allowlisting logger. No tracing yet |
+| R-19 | **Fixed** | Clear messages for unsupported browsers and blocked or missing mics, plus typed input |
+| R-21 | **Partial** | CSP and HSTS added. The CSP needs `'unsafe-inline'` for scripts because the pages are static |
+| R-25 | **Fixed** | One schema for all brief providers, with missing fields filled in |
+| R-26 | **Partial** | A failing provider now falls through to the next. Transcripts are still not delimited as data |
+| R-29 | **Fixed** | The in-memory limiter evicts old keys |
+| R-36 | **Fixed** | Fallback messages are saved as turns, and brief errors show a plain message |
+| R-03, R-07 | **Open: blocked** | Staff auth and server-held call state need a database |
+
+**Deployment, checked 2026-11-05:** production is live on Vercel at `conversational-ai-agent-ten.vercel.app`, deployed from `main`. It ran `ef361c0` until Phase 0 was merged and deployed the same day (`d3d5f8a`); the new title, banner and emergency response were confirmed on the live site. Phase 1 isn't deployed yet. `/api/analytics` returned `503 no-db`, so that deployment isn't logging calls. The repository is public.
 
 ## 10. Limits of this audit
 

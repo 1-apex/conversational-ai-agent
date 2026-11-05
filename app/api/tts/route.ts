@@ -1,45 +1,45 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
-import { ttsLimiter, getIp } from "@/lib/rate-limit";
+import { route } from "@/lib/http/route";
+import { SpeechRequestSchema } from "@/lib/http/schemas";
+import { ttsLimiter } from "@/lib/rate-limit";
 
 const VOICE_ID = "StsEnVb0Dmu25FGnhzqO";
 
-export async function POST(req: NextRequest) {
-  const { success } = await ttsLimiter.limit(getIp(req));
-  if (!success) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-  }
+export const POST = route({
+  name: "tts",
+  access: "public",
+  limiter: ttsLimiter,
+  body: SpeechRequestSchema,
+  maxBytes: 8 * 1024,
+  handler: async ({ body, fail, log }) => {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) return fail("tts_not_configured", 501); // the client falls back on this status
 
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) {
-    console.warn("[tts] ELEVENLABS_API_KEY not set");
-    return NextResponse.json({ error: "ELEVENLABS_API_KEY not configured" }, { status: 501 });
-  }
+    try {
+      const client = new ElevenLabsClient({ apiKey });
+      const stream = await client.textToSpeech.convert(VOICE_ID, {
+        text: body.text,
+        modelId: "eleven_turbo_v2_5",
+        voiceSettings: {
+          stability:        0.45,
+          similarityBoost:  0.75,
+          style:            0.35,
+          useSpeakerBoost:  true,
+        },
+      });
 
-  try {
-    const body = (await req.json()) as { text?: string };
-    if (!body.text) return NextResponse.json({ error: "text required" }, { status: 400 });
-
-    const client = new ElevenLabsClient({ apiKey });
-    const stream = await client.textToSpeech.convert(VOICE_ID, {
-      text: body.text,
-      modelId: "eleven_turbo_v2_5",
-      voiceSettings: {
-        stability:        0.45,
-        similarityBoost:  0.75,
-        style:            0.35,
-        useSpeakerBoost:  true,
-      },
-    });
-
-    // Pipe stream directly — no server-side buffering, client receives chunks
-    // as ElevenLabs generates them for lower time-to-first-audio.
-    return new NextResponse(stream as unknown as ReadableStream, {
-      headers: { "Content-Type": "audio/mpeg" },
-    });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error("[tts] error:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
-}
+      // Pipe stream directly — no server-side buffering, client receives chunks
+      // as ElevenLabs generates them for lower time-to-first-audio.
+      return new NextResponse(stream as unknown as ReadableStream, {
+        headers: { "Content-Type": "audio/mpeg" },
+      });
+    } catch (error) {
+      log.error("provider.failed", {
+        provider: "elevenlabs",
+        errorName: error instanceof Error ? error.name : "Unknown",
+      });
+      return fail("upstream_error", 502);
+    }
+  },
+});

@@ -323,7 +323,7 @@ export default function DashboardPage() {
     fetch("/api/analytics")
       .then(r => r.json())
       .then(d => {
-        if (d.error) setError(d.error);
+        if (d.error) setError(d.error.code === "no-db" ? "Call logging isn't configured, so there's nothing to show." : "Failed to load analytics");
         else setCalls(d.calls as CallRow[]);
       })
       .catch(() => setError("Failed to load analytics"))

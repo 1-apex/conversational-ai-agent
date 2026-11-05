@@ -2,7 +2,7 @@
 flowchart LR
   caller["Caller, anonymous, browser"]
   anyone["Anyone on the internet"]
-  subgraph app["Next.js app, deployment not verified"]
+  subgraph app["Next.js app on Vercel, public"]
     ui["CallStudio client component"]
     dash["/dashboard, no auth"]
     routes["API routes, no auth"]

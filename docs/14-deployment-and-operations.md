@@ -1,6 +1,6 @@
 # 14 — Deployment and Operations
 
-**Status: Proposed. No deployment configuration is committed, and the actual host is unverified.** The commit history suggests Vercel, so this plan assumes it and adds no new infrastructure.
+**Status: Proposed. Vercel is confirmed as the host:** production deploys from `main` to `conversational-ai-agent-ten.vercel.app`, and pull requests get preview deployments. This plan adds no new infrastructure.
 
 Diagrams: [`deployment-architecture.mmd`](diagrams/deployment-architecture.mmd), [`ci-cd-pipeline.mmd`](diagrams/ci-cd-pipeline.mmd), [`incident-response.mmd`](diagrams/incident-response.mmd).
 
@@ -17,9 +17,9 @@ Diagrams: [`deployment-architecture.mmd`](diagrams/deployment-architecture.mmd),
 
 Credentials are never shared between environments.
 
-## Immediate check
+## Standing rule
 
-If any public deployment of this app exists, restrict it now. It speaks as a real company, has no emergency handling and exposes logged calls. See the [decisions](17-implementation-roadmap.md#decisions-needed).
+The production deployment is public and has no database, so no call data is exposed. Don't set `DATABASE_URL` on a public deployment until staff auth exists, because `/dashboard` and the call APIs have no login. See the [decisions](17-implementation-roadmap.md#decisions-needed).
 
 ## Release flow
 

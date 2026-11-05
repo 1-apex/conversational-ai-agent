@@ -4,10 +4,11 @@ import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from "
 import {
   CallStatus, AgentName, AgentState, AgentTurn, AgentApiResponse, CallBriefData,
 } from "@/lib/types";
-import { EMPTY_ENTITY_MAP } from "@/lib/entity-extractor";
 import { DEMO_DISCLOSURE, NO_LIVE_STAFF_MESSAGE } from "@/lib/demo-notice";
 import { EMERGENCY_MESSAGE, isEmergencyStatement } from "@/lib/emergency-offramp";
+import { MAX_HISTORY } from "@/lib/limits";
 import DemoNotice from "./DemoNotice";
+import TypedInput from "./TypedInput";
 import { AGENT_META } from "./AgentBadge";
 import AgentBadge from "./AgentBadge";
 import AgentTranscript from "./AgentTranscript";
@@ -108,6 +109,7 @@ export default function CallStudio() {
   const [transferring,   setTransferring]   = useState(false);
   const [sentiment,      setSentiment]      = useState<"positive"|"neutral"|"negative">("neutral");
   const [speakingTurnId, setSpeakingTurnId] = useState("");
+  const [voiceError,     setVoiceError]     = useState("");
 
   const callIdRef    = useRef("");
   const callStartRef = useRef("");
@@ -256,8 +258,10 @@ export default function CallStudio() {
       const voice =
         voices.find((v) => v.default && v.lang.startsWith("en") && v.localService) ??
         voices.find((v) => v.lang === "en-US" && v.localService) ??
-        voices.find((v) => v.lang.startsWith("en") && v.localService) ??
-        voices.find((v) => v.lang.startsWith("en"));
+        voices.find((v) => v.lang.startsWith("en") && v.localService);
+      // A remote voice would send this text to another vendor, so stay silent; the
+      // text is already on screen. An empty list means voices haven't loaded yet.
+      if (voices.length > 0 && !voice) { onEnd(); return; }
       if (voice) utterance.voice = voice;
       let fired = false;
       const safeEnd = () => { if (!fired) { fired = true; onEnd(); } };
@@ -405,7 +409,10 @@ export default function CallStudio() {
     if (!isActiveRef.current) return;
     const w    = window as WindowWithSpeech;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!Ctor) return;
+    if (!Ctor) {
+      setVoiceError("This browser doesn't support speech recognition. You can type instead, or use Chrome or Edge.");
+      return;
+    }
 
     finalTextRef.current = "";
     setInterimText("");
@@ -414,6 +421,7 @@ export default function CallStudio() {
     rec.continuous     = false;
     rec.interimResults = true;
     rec.lang           = "en-US";
+    let retryAfterEnd  = true;
 
     rec.onresult = (event: SREvent) => {
       lastSpeechTimeRef.current = Date.now();
@@ -451,7 +459,7 @@ export default function CallStudio() {
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
         }, 300);
-      } else if (isActiveRef.current && agentStateRef.current === "listening") {
+      } else if (retryAfterEnd && isActiveRef.current && agentStateRef.current === "listening") {
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
         }, 400);
@@ -460,6 +468,20 @@ export default function CallStudio() {
 
     rec.onerror = (event: Event) => {
       const e = event as Event & { error?: string };
+      // Retrying can't fix these, so say what's wrong instead of looping silently
+      const permanent: Record<string, string> = {
+        "not-allowed":         "Microphone access is blocked. Allow it in your browser settings, or type instead.",
+        "service-not-allowed": "Speech recognition is blocked in this browser. You can type instead.",
+        "audio-capture":       "No microphone was found. You can type instead.",
+        "language-not-supported": "Speech recognition isn't available for this language here. You can type instead.",
+      };
+      const message = e.error ? permanent[e.error] : undefined;
+      if (message) {
+        setVoiceError(message);
+        clearSilenceWatcher();
+        retryAfterEnd = false;
+        return;
+      }
       if (e.error !== "aborted" && isActiveRef.current && agentStateRef.current === "listening") {
         setTimeout(() => {
           if (isActiveRef.current && agentStateRef.current === "listening") startListening();
@@ -506,7 +528,7 @@ export default function CallStudio() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          history:      snapshot,
+          history:      snapshot.slice(-MAX_HISTORY),
           userInput,
           currentAgent: activeAgentRef.current,
         }),
@@ -544,6 +566,13 @@ export default function CallStudio() {
       const message = isEmergencyStatement(userInput)
         ? EMERGENCY_MESSAGE
         : `${snapshot.length === 0 ? `${DEMO_DISCLOSURE} ` : ""}Sorry, I didn't catch that — could you say that again?`;
+      // Saved as a turn so the words are on screen even if audio fails too
+      const fallbackTurn: AgentTurn = {
+        id: genId(), role: "agent", content: message,
+        agent: activeAgentRef.current, timestamp: Date.now(),
+      };
+      turnsRef.current = [...turnsRef.current, fallbackTurn];
+      setTurns(turnsRef.current);
       speak(message, activeAgentRef.current);
     }
   }, [speak]);
@@ -554,6 +583,7 @@ export default function CallStudio() {
     setActiveAgent("orchestrator");  activeAgentRef.current = "orchestrator";
     setBrief(null);                  setBriefError("");
     setElapsed(0);                   finalTextRef.current   = "";
+    setVoiceError("");
     setSentiment("neutral");
     setSpeakingTurnId("");
     accumulatedTextRef.current = "";
@@ -598,7 +628,7 @@ export default function CallStudio() {
 
     const briefTurns = currentTurns.map((t) => ({
       id: t.id, speaker: t.role === "agent" ? "agent" : "prospect" as "agent" | "prospect",
-      text: t.content, timestamp: t.timestamp, entities: EMPTY_ENTITY_MAP,
+      text: t.content, timestamp: t.timestamp,
     }));
 
     let callBrief: CallBriefData | null = null;
@@ -608,11 +638,12 @@ export default function CallStudio() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ turns: briefTurns, duration }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       callBrief = (await res.json()) as CallBriefData;
       setBrief(callBrief);
     } catch (err) {
-      setBriefError(err instanceof Error ? err.message : "Brief generation failed");
+      console.error("Brief failed:", err);
+      setBriefError("The call ended, but a brief couldn't be generated.");
     }
 
     const agentsUsed    = [...new Set(currentTurns.filter(t => t.agent).map(t => t.agent!))];
@@ -646,6 +677,12 @@ export default function CallStudio() {
     setAgentState("speaking");
     agentStateRef.current = "speaking";
     recognitionRef.current?.abort();
+    const noStaffTurn: AgentTurn = {
+      id: genId(), role: "agent", content: NO_LIVE_STAFF_MESSAGE,
+      agent: activeAgentRef.current, timestamp: Date.now(),
+    };
+    turnsRef.current = [...turnsRef.current, noStaffTurn];
+    setTurns(turnsRef.current);
     webSpeechFallback(NO_LIVE_STAFF_MESSAGE, () => endCall());
   }, [endCall]);
 
@@ -654,6 +691,7 @@ export default function CallStudio() {
     setTurns([]);       setElapsed(0);    setActiveAgent("orchestrator");
     setAgentState("idle");
     setTransferring(false);
+    setVoiceError("");
     setSentiment("neutral");
     setSpeakingTurnId("");
   }, []);
@@ -785,7 +823,7 @@ export default function CallStudio() {
       <div className="flex flex-1 overflow-hidden max-w-6xl w-full mx-auto">
 
         {/* Left — Sphere */}
-        <div className="w-2/5 flex flex-col items-center justify-center gap-5 p-8 border-r border-white/20">
+        <div className="w-2/5 min-h-0 overflow-y-auto flex flex-col items-center justify-center-safe gap-5 p-8 border-r border-white/20">
           <CubePulse agentState={agentState} />
 
           <div className="text-center space-y-1.5">
@@ -815,6 +853,13 @@ export default function CallStudio() {
             {status === "ending" && <p className="text-sm text-gray-400">Processing…</p>}
             {status === "done"   && <p className="text-sm text-gray-500">Call ended</p>}
           </div>
+
+          {status === "active" && voiceError && (
+            <p role="alert" className="text-xs text-red-600 text-center max-w-xs">{voiceError}</p>
+          )}
+          {status === "active" && (
+            <TypedInput disabled={agentState === "thinking" || transferring} onSend={callAgent} />
+          )}
         </div>
 
         {/* Right — Transcript / Brief */}
