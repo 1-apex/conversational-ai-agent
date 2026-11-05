@@ -70,7 +70,7 @@ The goal is now to demonstrate production-grade engineering on synthetic data. I
 
 Small and easily reviewed, with no new architecture.
 
-**Status: implemented 2026-11-05, not yet committed. Not tested with a live model or a real microphone, because no provider keys were available and the test browser blocks the mic.** Results are in the [audit](01-repository-audit.md#9-remediation-since-this-audit). T0.4 was checked with a throwaway script, not a committed test, because the test runner arrives in T1.1.
+**Status: implemented 2026-11-05 on branch `phase-0-risk-reduction`, not yet merged. Not tested with a live model or a real microphone, because no provider keys were available and the test browser blocks the mic.** Results are in the [audit](01-repository-audit.md#9-remediation-since-this-audit). T0.4 was checked with a throwaway script, not a committed test, because the test runner arrives in T1.1.
 
 | Task | Priority | Depends on | Files | Implementation | Acceptance | Tests | Security note | Size |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

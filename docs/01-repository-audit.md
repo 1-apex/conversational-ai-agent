@@ -181,7 +181,7 @@ Barge-in with echo rejection, 2.5 s turn debounce, STT product-name corrections,
 
 Findings above describe commit `ef361c0` and aren't rewritten. Line numbers refer to that commit.
 
-**Phase 0, 2026-11-05 (uncommitted at time of writing):**
+**Phase 0, 2026-11-05 (branch `phase-0-risk-reduction`):**
 
 | Finding | Status | What changed |
 | --- | --- | --- |

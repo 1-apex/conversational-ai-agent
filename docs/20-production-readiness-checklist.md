@@ -1,6 +1,6 @@
 # 20 — Production Readiness Checklist
 
-**Assessed: 2026-11-04, commit `ef361c0`; updated 2026-11-05 for uncommitted Phase 0 changes. Overall status: NOT approved for real callers.** The only status reached is partial Development-ready.
+**Assessed: 2026-11-04, commit `ef361c0`; updated 2026-11-05 for Phase 0 on branch `phase-0-risk-reduction`. Overall status: NOT approved for real callers.** The only status reached is partial Development-ready.
 
 ## Readiness statuses
 
