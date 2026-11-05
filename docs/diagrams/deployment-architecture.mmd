@@ -1,0 +1,37 @@
+%% STATUS: TARGET (proposed). Vercel assumed, to be verified. No extra infrastructure beyond the current stack.
+flowchart TB
+  subgraph dev["Development"]
+    devapp["Local Next.js"]
+    devdb[("Neon dev branch, synthetic data")]
+    devkeys["Developer keys, no PHI"]
+  end
+  subgraph stg["Staging"]
+    stgapp["Vercel preview or staging project"]
+    stgdb[("Neon staging, synthetic data")]
+    stgr["Upstash staging"]
+  end
+  subgraph prod["Production, pilot only after approval"]
+    prodapp["Vercel production project, BAA add-on required for PHI"]
+    proddb[("Neon production, Scale plan and HIPAA enablement required for PHI")]
+    prodr["Upstash production, no PHI in keys"]
+  end
+  subgraph ext["External providers, per provider policy"]
+    prov["LLM, STT, TTS"]
+    obsv["Observability backend"]
+  end
+  gh["Git repository and CI"]
+  gh -->|lint, types, tests, evals| gates{"Gates pass?"}
+  gates -->|yes| stgapp
+  stgapp -->|manual approval and critical eval pass| prodapp
+  gh -->|migrations| stgdb
+  stgdb -.->|same migrations after approval| proddb
+  devapp --> devdb
+  stgapp --> stgdb
+  stgapp --> stgr
+  prodapp --> proddb
+  prodapp --> prodr
+  devapp --> devkeys
+  stgapp --> prov
+  prodapp --> prov
+  stgapp -.-> obsv
+  prodapp -.-> obsv

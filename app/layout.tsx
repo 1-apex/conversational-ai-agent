@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Inogen — AI Call Agent",
-  description: "Real-time AI voice agent for Inogen oxygen therapy solutions.",
+  title: "Oxygen Support Demo — AI Call Agent",
+  description: "Independent AI voice agent demo about Inogen products. Not affiliated with or endorsed by Inogen.",
 };
 
 export default function RootLayout({

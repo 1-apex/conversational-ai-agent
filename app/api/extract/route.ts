@@ -25,7 +25,6 @@ export async function POST(req: NextRequest) {
     const secs        = Number(duration ?? 0);
 
     // ── AI extraction (when a key is configured) ─────────────────────────
-    // Swap the comment below to enable the provider you have a key for.
     // The import is dynamic so the server never crashes on missing keys.
 
     if (process.env.ANTHROPIC_API_KEY) {
@@ -39,13 +38,6 @@ export async function POST(req: NextRequest) {
       const brief = await extractWithGroq(castedTurns, secs);
       return NextResponse.json(brief);
     }
-
-    // GEMINI: uncomment when GEMINI_API_KEY is in .env
-    // if (process.env.GEMINI_API_KEY) {
-    //   const { extractWithGemini } = await import("@/lib/gemini-client");
-    //   const brief = await extractWithGemini(castedTurns, secs);
-    //   return NextResponse.json(brief);
-    // }
 
     // ── Rule-based fallback (no API key required) ─────────────────────────
     const brief = generateRuleBrief(castedTurns, secs);

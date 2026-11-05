@@ -1,0 +1,33 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  actor X as Unauthorized client
+  participant MW as Route guard
+  participant RL as Rate limiter
+  participant AU as Audit log
+  participant API as Protected handler
+  participant DB as Postgres
+  X->>MW: GET /api/calls/id/transcript
+  MW->>RL: Check limit
+  alt Limit exceeded
+    RL-->>X: 429
+  else Within limit
+    MW->>MW: Validate session
+    alt No valid session
+      MW->>AU: Record denied access
+      MW-->>X: 401 with generic error
+    else Valid session, missing permission
+      MW->>AU: Record denied access with user ID
+      MW-->>X: 403 with generic error
+    else Valid session and permission
+      MW->>API: Forward with user and organization
+      API->>DB: Query scoped to organization
+      alt Record in another organization
+        DB-->>API: No row
+        API-->>X: 404, existence not revealed
+      else Found
+        DB-->>API: Record
+        API->>AU: Record transcript access
+        API-->>X: 200
+      end
+    end
+  end

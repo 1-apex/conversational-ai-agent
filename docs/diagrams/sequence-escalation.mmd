@@ -1,0 +1,30 @@
+%% STATUS: TARGET (proposed, not implemented). Callback queue only. No live transfer exists.
+sequenceDiagram
+  actor C as Caller
+  participant API as Calls API
+  participant EM as Escalation manager
+  participant DB as Postgres
+  participant Q as Support queue UI
+  actor R as Support representative
+  participant AU as Audit log
+  C->>API: Asks for a person
+  API->>EM: Create escalation, reason human_request
+  EM->>EM: Assign priority by policy
+  EM->>DB: Insert escalation and first event
+  API-->>C: Honest message, callback offered, no live transfer claimed
+  C->>API: Gives callback number
+  API->>DB: Store contact in restricted column
+  R->>Q: Opens queue
+  Q->>API: GET /api/escalations with staff session
+  API->>API: Check role and organization
+  API->>DB: Query scoped to organization
+  API-->>Q: Open escalations
+  R->>Q: Claims item and opens transcript
+  Q->>API: PATCH assign, GET transcript
+  API->>AU: Record assignment and transcript access
+  API-->>Q: Summary and transcript
+  R->>C: Calls back outside this system
+  R->>Q: Records outcome
+  Q->>API: PATCH status resolved
+  API->>DB: Insert escalation event
+  API->>AU: Record resolution

@@ -1,0 +1,18 @@
+%% STATUS: TARGET (proposed, not implemented)
+flowchart LR
+  up["Upload official document"] --> val["Validate role, type, size"]
+  val -->|invalid| rej["Reject and audit"]
+  val --> ext["Extract text"]
+  ext --> scan["Scan: instruction-like text, PHI, encoding tricks"]
+  scan --> norm["Normalize"]
+  norm --> chunk["Chunk by section, keep source location"]
+  chunk --> meta["Attach metadata and hashes"]
+  meta --> emb["Embed"]
+  emb --> idx["Index: pgvector and full text"]
+  idx --> pend["Status: pending review"]
+  pend --> rv{"Second-person approval"}
+  rv -->|rejected| rejected["Status: rejected"]
+  rv -->|approved| pub["Status: approved, effective date set"]
+  pub --> live["Eligible for retrieval"]
+  pub --> old["Previous version: superseded"]
+  live -->|expiry or recall| ret["Status: retired, excluded from retrieval"]

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { AgentName, AgentTurn, AgentApiResponse } from "@/lib/types";
 import { AGENT_SYSTEM_PROMPTS } from "@/lib/agent-prompts";
 import { agentLimiter, getIp } from "@/lib/rate-limit";
+import { DEMO_DISCLOSURE } from "@/lib/demo-notice";
+import { EMERGENCY_MESSAGE, isEmergencyStatement } from "@/lib/emergency-offramp";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "llama-3.3-70b-versatile";
@@ -63,6 +65,14 @@ export async function POST(req: NextRequest) {
     const userInput:    string      = typeof body.userInput === "string" ? body.userInput : "";
     const currentAgent: AgentName   = isAgentName(body.currentAgent) ? body.currentAgent : "orchestrator";
 
+    // Interim emergency off-ramp: no LLM reply, and it stays on for the rest of the
+    // call, so a later question can't drop back into a normal sales conversation.
+    const callerTexts = [userInput, ...history.filter((t) => t?.role === "user").map((t) => t.content)];
+    if (callerTexts.some(isEmergencyStatement)) {
+      const reply: AgentApiResponse = { reply: EMERGENCY_MESSAGE, agent: currentAgent, handoff: null };
+      return NextResponse.json(reply);
+    }
+
     // Build Groq message array from conversation history
     const messages: GroqMessage[] = history.map((t) => ({
       role:    t.role === "agent" ? "assistant" : "user",
@@ -110,6 +120,9 @@ export async function POST(req: NextRequest) {
 
     // If handoff is same as current agent, clear it
     if (parsed.handoff === currentAgent) parsed.handoff = null;
+
+    // Added here rather than in the prompt, so the opening disclosure can't be skipped by the model
+    if (!userInput && history.length === 0) parsed.reply = `${DEMO_DISCLOSURE} ${parsed.reply}`;
 
     return NextResponse.json(parsed);
   } catch (error) {

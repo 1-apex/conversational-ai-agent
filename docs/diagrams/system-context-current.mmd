@@ -1,0 +1,25 @@
+%% STATUS: CURRENT STATE, verified against commit ef361c0
+flowchart LR
+  caller["Caller, anonymous, browser"]
+  anyone["Anyone on the internet"]
+  subgraph app["Next.js app, deployment not verified"]
+    ui["CallStudio client component"]
+    dash["/dashboard, no auth"]
+    routes["API routes, no auth"]
+  end
+  speech["Browser speech service, server-based by default"]
+  groq["Groq, Llama 3.3 70B"]
+  el["ElevenLabs TTS"]
+  claude["Anthropic Claude"]
+  neon[("Neon Postgres, calls table")]
+  redis["Upstash Redis, optional"]
+  caller -->|voice| ui
+  ui -->|audio| speech
+  ui -->|history and agent, client controlled| routes
+  routes -->|full transcript| groq
+  routes -->|reply text| el
+  routes -->|transcript at call end| claude
+  routes --> neon
+  routes -.-> redis
+  anyone -->|read and write, unauthenticated| routes
+  anyone --> dash

@@ -1,0 +1,37 @@
+%% STATUS: TARGET (proposed, not implemented)
+flowchart TD
+  start["Start Call"] --> notice["Spoken AI and recording notice"]
+  notice --> greet["Greeting"]
+  greet --> listen["Listen"]
+  listen --> sttok{"Speech recognized?"}
+  sttok -->|no, retry limit not reached| reprompt["Ask caller to repeat"]
+  reprompt --> listen
+  sttok -->|repeated failure| sttfail["Explain, offer callback form"]
+  sttok -->|silence 8 s| checkin["Check in once"]
+  checkin --> listen
+  sttok -->|yes| input["Validate input"]
+  input -->|invalid or oversized| reprompt
+  input --> safety{"Input safety severity"}
+  safety -->|CRITICAL| emerg["Emergency pathway"]
+  safety -->|HIGH| esc["Boundary script and escalation"]
+  safety -->|LOW or MODERATE| route["Deterministic routing"]
+  route --> retr["Retrieve approved evidence"]
+  retr -->|insufficient evidence| noev["State limitation, offer human support"]
+  retr --> gen["Generate with agent"]
+  gen -->|provider failure| provfail["Approved fallback, no unapproved provider"]
+  gen --> validate{"Response valid?"}
+  validate -->|no| fallback["Approved fallback, safety event"]
+  validate -->|yes| tts["TTS"]
+  noev --> tts
+  esc --> tts
+  emerg --> tts
+  fallback --> tts
+  provfail --> tts
+  tts -->|TTS failure| ttsfail["Show text, local voice only"]
+  tts --> play["Play, barge-in enabled"]
+  ttsfail --> done{"Call continuing?"}
+  play --> done
+  done -->|yes| listen
+  done -->|no| finish["Finish call"]
+  sttfail --> finish
+  finish --> postcall["Post-call processing"]

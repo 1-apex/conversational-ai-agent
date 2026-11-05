@@ -1,0 +1,22 @@
+%% STATUS: TARGET (proposed, not implemented)
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> GREETING: call created, notice played
+  GREETING --> SPEAKING
+  LISTENING --> SAFETY_CHECK: final transcript received
+  LISTENING --> CALL_COMPLETED: hang-up or timeout
+  SAFETY_CHECK --> HUMAN_ESCALATION: CRITICAL or HIGH
+  SAFETY_CHECK --> INTENT_DETECTION: LOW or MODERATE
+  INTENT_DETECTION --> ROUTING
+  ROUTING --> AGENT_PROCESSING
+  AGENT_PROCESSING --> RESPONSE_VALIDATION
+  AGENT_PROCESSING --> ERROR: provider failure after retries
+  RESPONSE_VALIDATION --> SPEAKING: passed, or blocked with approved fallback
+  RESPONSE_VALIDATION --> HUMAN_ESCALATION: blocked, policy requires it
+  SPEAKING --> LISTENING: playback complete
+  SPEAKING --> SAFETY_CHECK: barge-in transcript
+  SPEAKING --> CALL_COMPLETED: closing script finished
+  HUMAN_ESCALATION --> SPEAKING: approved script
+  ERROR --> SPEAKING: approved fallback
+  ERROR --> CALL_COMPLETED: unrecoverable
+  CALL_COMPLETED --> [*]

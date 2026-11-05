@@ -1,0 +1,50 @@
+%% STATUS: TARGET (proposed module layout, not implemented)
+flowchart LR
+  subgraph components["components/"]
+    CS["CallStudio"]
+    hooks["hooks: useSpeechRecognition, useSpeechPlayback, useCallMachine"]
+  end
+  subgraph routes["app/api/"]
+    Rcalls["calls and turns"]
+    Rstaff["analytics, escalations, knowledge, evaluations, reviews"]
+    Rhealth["health"]
+  end
+  subgraph lib["lib/"]
+    auth["auth: sessions, rbac, call-token"]
+    conv["conversation: pipeline, state-machine, router"]
+    safety["safety: engine, detectors, policy, validator"]
+    agentsM["agents: prompts, contract"]
+    know["knowledge: retrieval, ingestion, chunking"]
+    prov["providers: llm, tts, stt, policy"]
+    postM["post-call: extract, schema"]
+    evalM["evaluations: datasets, runner, scorers, gates"]
+    audit["audit: append-only writer"]
+    obsM["observability: logger, tracing, redaction"]
+    dbM["db: client, migrations, repositories"]
+    cfg["config: validated env"]
+  end
+  CS --> hooks --> Rcalls
+  Rcalls --> auth
+  Rstaff --> auth
+  Rcalls --> conv
+  conv --> safety
+  conv --> agentsM
+  conv --> know
+  agentsM --> prov
+  safety --> prov
+  know --> prov
+  Rcalls --> postM --> prov
+  Rstaff --> know
+  Rstaff --> evalM --> conv
+  Rhealth --> dbM
+  auth --> audit
+  safety --> dbM
+  conv --> dbM
+  know --> dbM
+  postM --> dbM
+  evalM --> dbM
+  audit --> dbM
+  prov --> cfg
+  dbM --> cfg
+  conv -.-> obsM
+  prov -.-> obsM

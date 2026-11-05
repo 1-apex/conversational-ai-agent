@@ -1,0 +1,19 @@
+%% STATUS: TARGET (proposed, not implemented). No CI exists today.
+flowchart LR
+  pr["Pull request"] --> static["Lint, typecheck, dependency audit, secret scan"]
+  static --> unit["Vitest unit and integration"]
+  unit --> sdet["Offline safety suite, deterministic, no provider keys"]
+  sdet --> build["Build"]
+  build --> mig["Apply migrations to ephemeral branch"]
+  mig --> e2e["Playwright with mocked providers"]
+  e2e --> merge{"Review and checks pass?"}
+  merge -->|no| fix["Fix"]
+  merge -->|yes| stg["Deploy to staging, migrate"]
+  stg --> liveval["Full evaluation against live models"]
+  liveval --> gate{"Critical regression or threshold miss?"}
+  gate -->|yes| halt["Stop, keep production unchanged"]
+  gate -->|no| appr["Manual approval"]
+  appr --> flag["Deploy to production behind feature flag"]
+  flag --> smoke["Health checks and smoke test"]
+  smoke -->|fail| rb["Roll back"]
+  smoke -->|pass| mon["Monitor"]

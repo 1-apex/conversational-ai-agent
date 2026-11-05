@@ -1,0 +1,40 @@
+%% STATUS: TARGET (proposed, not implemented). Script and escalation policy require clinical and operational approval.
+sequenceDiagram
+  actor C as Caller
+  participant V as Voice UI
+  participant API as Calls API
+  participant S as Safety engine
+  participant L as Classifier LLM
+  participant EM as Escalation manager
+  participant DB as Postgres
+  participant OPS as On-call alert channel
+  C->>V: Statement suggesting an emergency
+  V->>API: POST turn
+  API->>S: Check input
+  S->>S: Deterministic emergency detector
+  alt Deterministic match
+    S-->>API: CRITICAL, no LLM needed
+  else No match
+    S->>L: Classify with short timeout
+    alt Classifier says possible emergency
+      L-->>S: Possible emergency
+      S-->>API: CRITICAL
+    else Timeout or malformed output
+      S-->>API: MODERATE at minimum, ambiguity check-in allowed
+    else Classifier says not emergency
+      L-->>S: Not emergency
+      S-->>API: Deterministic result stands
+    end
+  end
+  API->>DB: Mark call emergency_pathway, block sales routing
+  API->>DB: Safety event, redacted
+  API-->>V: Approved emergency script
+  V-->>C: Speaks script, text also shown on screen
+  Note over V: Script is bundled locally so it plays if TTS is down
+  API->>EM: Priority escalation
+  EM->>DB: Insert escalation, priority P1
+  EM->>OPS: Alert with call ID only
+  Note over API,OPS: The script does not depend on queue availability
+  C->>V: Further speech
+  V->>API: POST turn
+  API-->>V: Repeat approved script, normal agents stay locked

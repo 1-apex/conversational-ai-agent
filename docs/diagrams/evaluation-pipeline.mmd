@@ -1,0 +1,21 @@
+%% STATUS: TARGET (proposed, not implemented)
+flowchart LR
+  rev["Human review of production failures"] -->|approved, de-identified| ds
+  authored["Hand-authored synthetic cases"] --> ds
+  ds["Versioned benchmark dataset"] --> run["Evaluation runner"]
+  ver["Model, prompt, policy, knowledge versions"] --> run
+  run --> pipe["Real turn pipeline"]
+  pipe --> rec["Recorded outputs"]
+  rec --> det["Deterministic scorers: safety, routing, leakage, schema, grounding"]
+  rec --> judge["LLM judge: conversation quality only"]
+  rec --> hr["Human review queue, sampled and flagged"]
+  det --> agg["Aggregates and false-negative tracking"]
+  judge --> agg
+  hr --> agg
+  agg --> reg["Regression detection"]
+  base["Approved baseline"] --> reg
+  reg --> gate{"CI gate"}
+  gate -->|any critical regression| block["Block deployment"]
+  gate -->|thresholds met| allow["Allow, human promotes baseline"]
+  agg --> db[("Evaluation tables")]
+  db --> dash["Evaluation dashboard"]

@@ -1,0 +1,38 @@
+%% STATUS: TARGET (proposed, not implemented). Normal customer inquiry from start to finish.
+sequenceDiagram
+  actor C as Caller
+  participant V as Voice UI
+  participant API as Calls API
+  participant S as Safety engine
+  participant O as Orchestrator
+  participant AG as Agent
+  participant L as LLM
+  participant RV as Response validator
+  participant TT as TTS
+  participant DB as Postgres
+  C->>V: Start Call
+  V->>API: POST /api/calls
+  API->>DB: Insert call, state GREETING
+  API-->>V: callId, signed call token, notice and greeting
+  V-->>C: Spoken notice and greeting
+  C->>V: Speaks a question
+  V->>API: POST /api/calls/id/turns with transcript
+  API->>API: Verify token, validate, rate limit
+  API->>DB: Insert caller turn
+  API->>S: Check input
+  S-->>API: LOW, general_product
+  API->>O: Route using server-held state
+  O->>AG: Selected agent with allowed capabilities
+  AG->>L: Prompt and history window
+  L-->>AG: Structured reply
+  AG-->>O: Parsed contract
+  O->>RV: Validate
+  RV-->>O: Passed
+  O->>DB: Insert validated agent turn
+  O-->>API: turnId, text, agent
+  API-->>V: turnId, text, agent
+  V->>API: POST speech for turnId
+  API->>DB: Fetch validated text
+  API->>TT: Validated text
+  TT-->>V: Audio stream
+  V-->>C: Plays reply

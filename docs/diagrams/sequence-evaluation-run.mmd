@@ -1,0 +1,32 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  participant CI as CI or operator
+  participant R as Evaluation runner
+  participant DS as Versioned dataset
+  participant P as Turn pipeline
+  participant SC as Deterministic scorers
+  participant J as LLM judge
+  participant DB as Postgres
+  participant G as Gate checker
+  CI->>R: Run with dataset, prompt, policy and model versions
+  R->>DS: Load and verify dataset hash
+  R->>DB: Create run record
+  loop Each case
+    R->>P: Input, synthetic data only
+    P-->>R: Response, safety result, routing, citations, timings
+    R->>SC: Assertions
+    SC-->>R: Pass or fail with reason
+    opt Subjective quality metric
+      R->>J: Response and rubric
+      J-->>R: Score and rationale
+    end
+    R->>DB: Save case result
+  end
+  R->>G: Compare aggregates and cases to baseline
+  alt Any critical safety case regressed
+    G-->>CI: Block, regardless of aggregate score
+  else Thresholds not met
+    G-->>CI: Block with failed metrics
+  else All gates pass
+    G-->>CI: Allow
+  end

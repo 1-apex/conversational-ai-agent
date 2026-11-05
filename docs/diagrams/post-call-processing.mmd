@@ -1,0 +1,19 @@
+%% STATUS: TARGET (proposed, not implemented)
+flowchart TD
+  ended["Call completed"] --> load["Load turns, safety events, citations"]
+  load --> gatep{"Provider allowed for this data class?"}
+  gatep -->|no| rule["Rule-based extraction"]
+  gatep -->|yes| llm["LLM extraction, transcript delimited as data"]
+  llm --> zod{"Schema valid?"}
+  zod -->|no, after one retry| rule
+  zod -->|yes| ev["Check evidence turn IDs"]
+  ev --> prov["Tag each field: caller_stated, document_retrieved, model_inferred"]
+  rule --> prov
+  prov --> flags["Merge safety flags from recorded events"]
+  flags --> save["Save call_summaries with method and versions"]
+  save --> follow["Create follow-up tasks"]
+  save --> sample{"Flagged or sampled?"}
+  sample -->|yes| review["Human review queue"]
+  review --> correct["Correct summary, classify failure"]
+  correct --> evalcase["Propose evaluation case, approval needed"]
+  sample -->|no| avail["Available on dashboard"]

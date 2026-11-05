@@ -1,0 +1,12 @@
+%% STATUS: TARGET (proposed process). Requires named owners before use.
+flowchart LR
+  detect["Detection: alerts, review findings, reports"] --> triage["Triage: severity, on-call lead"]
+  triage --> contain["Containment: feature flag off, revoke keys, disable provider"]
+  contain --> invest["Investigation: traces, audit log, scope of data"]
+  invest --> breach{"Possible PHI breach or patient harm?"}
+  breach -->|yes| legal["Notify privacy, legal and clinical owners"]
+  breach -->|no| rem["Remediation"]
+  legal --> rem
+  rem --> valid["Validation: tests and evaluation suite pass"]
+  valid --> add["Add regression case"]
+  add --> closeit["Closure: blameless review, actions tracked"]

@@ -1,0 +1,43 @@
+%% STATUS: TARGET (proposed, not implemented)
+flowchart TB
+  subgraph FE["Frontend"]
+    voice["Voice interface: STT, TTS, barge-in, silence"]
+    staff["Staff UI: dashboard, escalations, knowledge, reviews, evaluations"]
+  end
+  subgraph API["API and authentication"]
+    authn["Staff sessions and signed call tokens"]
+    guard["RBAC, Zod validation, rate limits, correlation IDs"]
+  end
+  subgraph CORE["Conversation core, one server-side turn pipeline"]
+    insafe["Safety engine: input checks"]
+    orch["Orchestrator: state machine and deterministic routing"]
+    agents["Specialist agents: Main, Sales, Product, General, B2B"]
+    rag["RAG: hybrid retrieval over approved documents"]
+    outval["Response validation: schema, safety, grounding, leakage"]
+  end
+  esc["Human escalation: queue, callback, assignment"]
+  post["Post-call intelligence: structured brief with provenance"]
+  evals["Evaluation system: datasets, runner, gates, dashboard"]
+  obs["Observability: traces, metrics, redacted logs"]
+  db[("Postgres and pgvector")]
+  llm["LLM providers via provider policy gate"]
+  ttsv["TTS provider via provider policy gate"]
+  voice --> authn
+  staff --> authn --> guard
+  guard --> insafe --> orch --> agents
+  agents --> rag
+  agents --> llm
+  agents --> outval
+  outval -->|validated turn ID| voice
+  voice -->|speech request for validated turn| ttsv
+  insafe -->|HIGH or CRITICAL| esc
+  outval -->|blocked| esc
+  CORE --> db
+  esc --> db
+  post --> db
+  rag --> db
+  guard -->|call ended| post
+  evals -->|runs the same pipeline| insafe
+  evals --> db
+  CORE -.-> obs
+  post -.-> obs
