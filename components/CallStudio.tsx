@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
 import {
   CallStatus, AgentName, AgentState, AgentTurn, AgentApiResponse, CallBriefData,
 } from "@/lib/types";
 import { EMPTY_ENTITY_MAP } from "@/lib/entity-extractor";
+import { DEMO_DISCLOSURE, NO_LIVE_STAFF_MESSAGE } from "@/lib/demo-notice";
+import { EMERGENCY_MESSAGE, isEmergencyStatement } from "@/lib/emergency-offramp";
+import DemoNotice from "./DemoNotice";
 import { AGENT_META } from "./AgentBadge";
 import AgentBadge from "./AgentBadge";
 import AgentTranscript from "./AgentTranscript";
@@ -69,8 +72,31 @@ function correctTranscript(text: string): string {
   return r;
 }
 
+// ── ElevenLabs quota (localStorage, which doesn't exist during prerender) ─
+const quotaListeners = new Set<() => void>();
+
+function subscribeQuota(listener: () => void) {
+  quotaListeners.add(listener);
+  return () => { quotaListeners.delete(listener); };
+}
+
+function quotaKey() {
+  const d = new Date();
+  return `inogen_el_quota_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function readQuota() {
+  const stored = parseInt(localStorage.getItem(quotaKey()) ?? "0", 10);
+  return isNaN(stored) ? 0 : stored;
+}
+
+function addToQuota(chars: number) {
+  localStorage.setItem(quotaKey(), String(readQuota() + chars));
+  quotaListeners.forEach((listener) => listener());
+}
+
 export default function CallStudio() {
-  const [status,         setStatus]         = useState<CallStatus>("idle");
+  const [status,        setStatus]         = useState<CallStatus>("idle");
   const [agentState,     setAgentState]     = useState<AgentState>("idle");
   const [activeAgent,    setActiveAgent]    = useState<AgentName>("orchestrator");
   const [turns,          setTurns]          = useState<AgentTurn[]>([]);
@@ -78,7 +104,7 @@ export default function CallStudio() {
   const [elapsed,        setElapsed]        = useState(0);
   const [brief,          setBrief]          = useState<CallBriefData | null>(null);
   const [briefError,     setBriefError]     = useState("");
-  const [quotaUsed,      setQuotaUsed]      = useState(0);
+  const quotaUsed = useSyncExternalStore(subscribeQuota, readQuota, () => 0);
   const [transferring,   setTransferring]   = useState(false);
   const [sentiment,      setSentiment]      = useState<"positive"|"neutral"|"negative">("neutral");
   const [speakingTurnId, setSpeakingTurnId] = useState("");
@@ -88,24 +114,6 @@ export default function CallStudio() {
 
   const EL_QUOTA_LIMIT = 10_000;
   const EL_QUOTA_WARN  = 8_000;
-
-  function quotaKey() {
-    const d = new Date();
-    return `inogen_el_quota_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  }
-
-  useEffect(() => {
-    const stored = parseInt(localStorage.getItem(quotaKey()) ?? "0", 10);
-    setQuotaUsed(isNaN(stored) ? 0 : stored);
-  }, []);
-
-  function addToQuota(chars: number) {
-    const key  = quotaKey();
-    const prev = parseInt(localStorage.getItem(key) ?? "0", 10);
-    const next = (isNaN(prev) ? 0 : prev) + chars;
-    localStorage.setItem(key, String(next));
-    setQuotaUsed(next);
-  }
 
   // Refs for async-safe access
   const isActiveRef        = useRef(false);
@@ -506,6 +514,7 @@ export default function CallStudio() {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as AgentApiResponse;
+      if (!isActiveRef.current) return; // call ended while this reply was in flight
 
       const isHandoff = !!data.handoff && data.handoff !== activeAgentRef.current;
       if (isHandoff) {
@@ -531,7 +540,11 @@ export default function CallStudio() {
       }
     } catch (err) {
       console.error("Agent call failed:", err);
-      speak("Sorry, I didn't catch that — could you say that again?", activeAgentRef.current);
+      // The API is unreachable here, so these checks have to run in the browser
+      const message = isEmergencyStatement(userInput)
+        ? EMERGENCY_MESSAGE
+        : `${snapshot.length === 0 ? `${DEMO_DISCLOSURE} ` : ""}Sorry, I didn't catch that — could you say that again?`;
+      speak(message, activeAgentRef.current);
     }
   }, [speak]);
 
@@ -624,11 +637,16 @@ export default function CallStudio() {
 
   const handleTransfer = useCallback(async () => {
     setTransferring(true);
+    // Before mute(): cancelling speech fires its end callback, which would otherwise
+    // resume listening and let the silence check-in cut this message off.
+    isActiveRef.current = false;
+    clearSilenceWatcher();
     mute();
     stopInterruptListener();
+    setAgentState("speaking");
+    agentStateRef.current = "speaking";
     recognitionRef.current?.abort();
-    const msg = "Sure, let me connect you with a live specialist right now. Please hold for just a moment.";
-    webSpeechFallback(msg, () => endCall());
+    webSpeechFallback(NO_LIVE_STAFF_MESSAGE, () => endCall());
   }, [endCall]);
 
   const handleNewCall = useCallback(() => {
@@ -682,6 +700,7 @@ export default function CallStudio() {
 
   return (
     <div className="flex flex-col h-full relative">
+      <DemoNotice />
 
       {/* ── Header ────────────────────────────────────────────────────── */}
       <header className="glass-panel border-b border-white/20 px-6 py-3 shrink-0">
@@ -690,8 +709,8 @@ export default function CallStudio() {
             {activeAgent[0].toUpperCase()}
           </div>
           <div>
-            <h1 className="text-base font-semibold text-gray-800 leading-tight">Inogen</h1>
-            <p className="text-[11px] text-gray-400">AI Call Agent — Inogen</p>
+            <h1 className="text-base font-semibold text-gray-800 leading-tight">Oxygen Support Demo</h1>
+            <p className="text-[11px] text-gray-400">AI call agent, not affiliated with Inogen</p>
           </div>
 
           {status === "active" && (
@@ -734,7 +753,7 @@ export default function CallStudio() {
                   disabled={transferring}
                   className="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-all disabled:opacity-50"
                 >
-                  Transfer
+                  Ask for a person
                 </button>
                 <button
                   onClick={endCall}

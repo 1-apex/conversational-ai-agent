@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import DemoNotice from "@/components/DemoNotice";
 
 interface CallBrief {
   summary?:     string;
@@ -356,17 +358,18 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      {selectedCall && <BriefModal call={selectedCall} onClose={() => setSelectedCall(null)} />}
+      <div className="-mx-6 -mt-6 mb-6"><DemoNotice /></div>
+      {selectedCall &&<BriefModal call={selectedCall} onClose={() => setSelectedCall(null)} />}
 
       <div className="max-w-5xl mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Inogen Analytics</h1>
+            <h1 className="text-xl font-bold text-gray-900">Demo Call Analytics</h1>
             <p className="text-xs text-gray-400 mt-0.5">Last {calls.length} calls</p>
           </div>
-          <a href="/" className="text-xs text-teal-600 hover:underline">← Back to agent</a>
+          <Link href="/" className="text-xs text-teal-600 hover:underline">← Back to agent</Link>
         </div>
 
         {/* Summary cards */}

@@ -1,0 +1,32 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  participant PC as Post-call worker
+  participant DB as Postgres
+  participant PG as Provider policy gate
+  participant L as Approved extraction LLM
+  participant RB as Rule-based extractor
+  participant Z as Zod schema
+  PC->>DB: Load turns, safety events, citations
+  PC->>PG: Which provider may process this data class?
+  alt Provider allowed
+    PG-->>PC: Approved provider
+    PC->>L: Transcript delimited as untrusted data
+    L-->>PC: Structured extraction
+    PC->>Z: Validate
+    alt Valid
+      Z-->>PC: Typed result
+      PC->>PC: Check evidence turn IDs exist, tag provenance
+      PC->>DB: Save summary with model and prompt version
+    else Invalid
+      Z-->>PC: Errors
+      PC->>RB: Fall back
+      RB-->>PC: Rule-based result, marked low confidence
+      PC->>DB: Save with method rule_based
+    end
+  else No provider allowed
+    PG-->>PC: Denied
+    PC->>RB: Rule-based only
+    RB-->>PC: Result
+    PC->>DB: Save with method rule_based
+  end
+  Note over PC,DB: Safety flags come from recorded events, never from the LLM alone

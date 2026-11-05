@@ -1,0 +1,29 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  actor C as Caller
+  participant API as Calls API
+  participant AG as Agent runner
+  participant PG as Provider policy gate
+  participant L1 as Primary LLM
+  participant L2 as Approved secondary LLM
+  participant RV as Response validator
+  participant DB as Postgres
+  API->>AG: Turn after input safety
+  AG->>L1: Request with timeout
+  L1--xAG: 429 or 5xx
+  AG->>L1: Retry with backoff, budget capped for voice latency
+  L1--xAG: Still failing
+  AG->>DB: Record provider error, no prompt content
+  AG->>PG: Is a secondary approved for this data class?
+  alt Approved secondary exists
+    PG-->>AG: Yes
+    AG->>L2: Same request
+    L2-->>AG: Reply
+    AG->>RV: Same validation as primary
+    RV-->>API: Result
+  else None approved
+    PG-->>AG: No
+    AG-->>API: Approved fallback message
+  end
+  API-->>C: Reply, or apology with callback offer
+  Note over AG,L2: Fallback never skips safety checks or validation

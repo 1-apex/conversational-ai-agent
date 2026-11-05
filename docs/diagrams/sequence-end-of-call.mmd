@@ -1,0 +1,22 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  actor C as Caller
+  participant V as Voice UI
+  participant API as Calls API
+  participant DB as Postgres
+  participant PC as Post-call worker
+  C->>V: Hangs up or closes the tab
+  alt Normal finish
+    V->>API: POST /api/calls/id/end
+  else Tab closed
+    V->>API: sendBeacon finish request
+  else No request arrives
+    API->>API: Scheduled sweep closes idle calls
+  end
+  API->>DB: State CALL_COMPLETED, finish time, duration
+  API-->>V: Accepted with brief status pending
+  Note over DB: Turns were saved per turn, so nothing is lost
+  API->>PC: Start processing
+  PC->>DB: Save summary or mark failed
+  V->>API: Poll brief status
+  API-->>V: Caller-safe completion message

@@ -1,0 +1,32 @@
+%% STATUS: TARGET (proposed, not implemented). Scripts require clinical and legal approval.
+flowchart TB
+  in["Caller transcript"] --> val["Schema and size validation"]
+  val --> norm["Normalize text"]
+  subgraph before["Input safety, before any agent LLM"]
+    norm --> det["Deterministic detectors: emergency, medical, PII, injection, human request"]
+    det --> cls["LLM classifier, can only raise severity"]
+    cls -->|timeout or malformed| cons["Conservative default: at least MODERATE"]
+    cls --> sev{"Severity"}
+    cons --> sev
+  end
+  sev -->|CRITICAL| emer["Emergency pathway: approved script, no LLM text, sales halted"]
+  sev -->|HIGH| boundary["Approved boundary script, create escalation"]
+  sev -->|MODERATE| constrained["Agent runs with restricted capabilities"]
+  sev -->|LOW| normal["Agent runs normally"]
+  constrained --> gen["Retrieval and generation"]
+  normal --> gen
+  subgraph after["Output safety, before any speech"]
+    gen --> schema["Zod contract"]
+    schema --> med["Medical and restricted-claim rules"]
+    med --> ground["Grounding: numbers and claims must match retrieved chunks"]
+    ground --> leak["PII and system-prompt leakage"]
+    leak --> ok{"All passed?"}
+  end
+  ok -->|yes| speak["Store validated turn, allow TTS"]
+  ok -->|no| fb["Block, approved fallback, safety event"]
+  fb --> escq{"Policy requires escalation?"}
+  escq -->|yes| esc["Create escalation"]
+  escq -->|no| speak2["Speak fallback"]
+  emer --> ev["Record safety event, redacted"]
+  boundary --> ev
+  fb --> ev

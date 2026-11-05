@@ -1,0 +1,36 @@
+%% STATUS: CURRENT STATE, ef361c0 plus uncommitted Phase 0 changes (2026-11-05)
+sequenceDiagram
+  actor C as Caller
+  participant CS as CallStudio
+  participant WS as Browser speech service
+  participant A as POST /api/agent
+  participant G as Groq
+  participant T as POST /api/tts
+  participant E as ElevenLabs
+  C->>CS: Speaks
+  CS->>WS: Audio
+  WS-->>CS: Text
+  Note over CS: Corrections, then 2.5 s debounce
+  CS->>A: history, userInput, currentAgent
+  Note over A: No validation of history or agent
+  alt Interim emergency phrase in this or an earlier caller turn
+    A-->>CS: Fixed emergency message, no LLM call
+  else No match
+    A->>G: System prompt plus history
+    alt Valid JSON
+      G-->>A: reply, agent, handoff
+    else Truncated or plain text
+      G-->>A: Raw text
+      Note over A: Raw text returned as reply
+    end
+    A-->>CS: reply, agent, handoff
+  end
+  Note over CS,E: No output validation before speech
+  CS->>T: Reply text
+  T->>E: Text
+  E-->>T: Audio stream
+  T-->>CS: Audio stream
+  CS-->>C: Plays audio
+  opt handoff is set
+    CS->>A: Empty userInput, new agent
+  end

@@ -1,0 +1,31 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  actor A as Knowledge editor
+  actor AP as Approver
+  participant UI as Knowledge admin UI
+  participant API as Knowledge API
+  participant ING as Ingestion pipeline
+  participant EM as Embedding provider
+  participant DB as Postgres
+  participant AU as Audit log
+  A->>UI: Upload official document and metadata
+  UI->>API: POST /api/knowledge/documents
+  API->>API: Check role, file type, size
+  API->>ING: Start
+  ING->>ING: Extract, normalize, flag instruction-like text
+  ING->>ING: Chunk and hash
+  ING->>EM: Embed chunks
+  EM-->>ING: Vectors
+  ING->>DB: Save version, status pending_review
+  API->>AU: Record upload
+  AP->>UI: Review extracted content and source
+  alt Approver differs from uploader and approves
+    UI->>API: POST approve
+    API->>DB: Status approved, set effective date
+    API->>DB: Supersede previous version
+    API->>AU: Record approval and publication
+  else Rejected
+    UI->>API: POST reject with reason
+    API->>DB: Status rejected
+    API->>AU: Record rejection
+  end

@@ -1,0 +1,52 @@
+%% STATUS: TARGET (proposed, not implemented)
+flowchart TB
+  subgraph tb0["Untrusted: public internet"]
+    caller["Caller browser"]
+    attacker["Any other client"]
+  end
+  subgraph tb1["Semi-trusted: authenticated staff"]
+    staff["Support, supervisor, admin, auditor browsers"]
+  end
+  subgraph tb2["Application trust boundary"]
+    edge["TLS, security headers, rate limits"]
+    token["Call token check, scope one call"]
+    session["Staff session check, RBAC"]
+    handlers["Route handlers, Zod validation"]
+    core["Safety engine and pipeline"]
+    gatep["Provider policy gate"]
+    secrets["Secrets from environment store"]
+  end
+  subgraph tb3["Sensitive data boundary"]
+    db[("Postgres: organization-scoped queries, least-privilege roles")]
+    aud[("Append-only audit log")]
+  end
+  subgraph tb4["External processors: each needs review"]
+    llmp["LLM"]
+    sttp["STT"]
+    ttsp["TTS"]
+    obsp["Observability, redacted only"]
+  end
+  subgraph tb5["Untrusted content, treated as data"]
+    docs["Uploaded documents"]
+    transcript["Caller transcripts"]
+    modelout["Model output"]
+  end
+  caller --> edge
+  attacker --> edge
+  staff --> edge
+  edge --> token
+  edge --> session
+  token --> handlers
+  session --> handlers
+  handlers --> core
+  core --> gatep
+  gatep --> llmp
+  gatep --> sttp
+  gatep --> ttsp
+  core -.-> obsp
+  handlers --> db
+  handlers --> aud
+  secrets -.-> gatep
+  docs -.->|validated, reviewed| core
+  transcript -.->|checked| core
+  modelout -.->|validated| core

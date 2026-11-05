@@ -1,0 +1,32 @@
+%% STATUS: TARGET (proposed, not implemented). Preserves the existing takeover behaviour.
+sequenceDiagram
+  participant API as Calls API
+  participant O as Orchestrator
+  participant A1 as Main agent
+  participant L as LLM
+  participant A2 as Sales agent
+  participant RV as Response validator
+  participant DB as Postgres
+  API->>O: Turn after safety check
+  O->>O: Deterministic router scores intent
+  alt Router is confident
+    O->>A2: Route directly
+  else Router is unsure
+    O->>A1: Handle turn
+    A1->>L: Prompt
+    L-->>A1: Reply with proposed destination sales
+    A1-->>O: Proposal and reason
+    O->>O: Check allowed-handoff matrix and per-call handoff cap
+    alt Handoff allowed
+      O->>DB: Record handoff, reason and policy result
+      O->>A2: Takeover with summary of context
+    else Denied or cap reached
+      O-->>API: Keep current agent or offer human support
+    end
+  end
+  A2->>L: Takeover prompt
+  L-->>A2: Introduction and answer
+  A2->>RV: Validate
+  RV-->>O: Passed
+  O->>DB: Insert agent turn with agent sales
+  O-->>API: turnId, text, agent

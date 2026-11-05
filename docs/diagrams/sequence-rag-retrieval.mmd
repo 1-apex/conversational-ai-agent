@@ -1,0 +1,35 @@
+%% STATUS: TARGET (proposed, not implemented)
+sequenceDiagram
+  participant O as Orchestrator
+  participant P as Product agent
+  participant R as Retriever
+  participant DB as Postgres and pgvector
+  participant EM as Embedding provider
+  participant L as LLM
+  participant RV as Response validator
+  O->>P: Product question, redacted query
+  P->>R: Search with product and audience filters
+  R->>EM: Embed redacted query
+  EM-->>R: Query vector
+  par Vector search
+    R->>DB: pgvector search, status approved and in effect
+  and Keyword search
+    R->>DB: Full-text search, status approved and in effect
+  end
+  DB-->>R: Candidates with metadata
+  R->>R: Merge by reciprocal rank, apply relevance threshold
+  alt Evidence sufficient
+    R-->>P: Chunks marked as untrusted data, version IDs
+    P->>L: Instructions, delimited evidence, question
+    L-->>P: Answer with chunk references
+    P->>RV: Answer and evidence
+    alt Grounded
+      RV->>DB: Record citations with document versions
+      RV-->>O: Passed
+    else Unsupported claim
+      RV-->>O: Blocked, approved fallback
+    end
+  else Evidence insufficient
+    R-->>P: No authoritative evidence
+    P-->>O: Approved limitation message, offer human support
+  end

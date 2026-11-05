@@ -1,0 +1,25 @@
+%% STATUS: TARGET (proposed, not implemented). Script text requires clinical approval.
+sequenceDiagram
+  actor C as Caller
+  participant API as Calls API
+  participant S as Safety engine
+  participant EM as Escalation manager
+  participant DB as Postgres
+  C->>API: Asks whether to raise their flow setting
+  API->>S: Check input
+  S->>S: Medical detector matches personalized flow advice
+  S-->>API: HIGH, medical_question, policy version
+  API->>DB: Safety event, redacted
+  API->>EM: Create escalation, reason medical
+  EM->>DB: Insert escalation, status open
+  Note over API: No specialist agent or LLM reply is generated
+  API-->>C: Approved boundary script, refer to clinician, offer callback
+  alt Caller wants a callback
+    C->>API: Accepts callback
+    API->>DB: Update escalation with callback request
+    API-->>C: Approved confirmation, no promised time unless configured
+  else Caller continues with a product question
+    C->>API: Asks about batteries
+    API->>S: Check input
+    S-->>API: LOW, normal flow resumes
+  end

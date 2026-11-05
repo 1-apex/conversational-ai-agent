@@ -1,8 +1,16 @@
-// Inogen company and product knowledge — injected into every agent system prompt
+// Inogen company and product knowledge — injected into every agent system prompt.
+// UNVERIFIED: unsourced except where a comment below says otherwise, and not supplied
+// or reviewed by Inogen. Don't add facts from memory or a model. Retires in Phase 4.
+//
+// Corrected 2026-11-04 from primary sources (see docs/01-repository-audit.md):
+// - Rove 6 specs, prescription: inogen.com/product/inogen-certified-pre-owned-rove6-system
+// - Medicare rental: medicare.gov/coverage/oxygen-equipment-accessories and CMS article A52514
+// Real phone numbers and email addresses are left out on purpose, so a demo never
+// sends anyone to a real line.
 export const INOGEN_KNOWLEDGE = `
 COMPANY: Inogen | Founded 2001 | HQ: Goleta, California | NASDAQ: INGN
 Mission: Clinically superior portable oxygen therapy that gives patients freedom and mobility.
-Phone: 1-800-646-4361 | Web: inogen.com | Hours: Mon–Fri 8am–8pm, Sat 9am–5pm ET
+Web: inogen.com | Hours: Mon–Fri 8am–8pm, Sat 9am–5pm ET
 Inogen has served 600,000+ patients across 40+ countries. FDA-cleared devices. ISO 13485 certified.
 
 ━━━ PRODUCTS ━━━
@@ -32,8 +40,8 @@ Inogen has served 600,000+ patients across 40+ countries. FDA-cleared devices. I
    Best for: Overnight use, sleep, continuous flow prescriptions, home-bound patients
 
 5. INOGEN ROVE 6 — Newest Portable Model
-   Weight: 4.0 lbs | Settings: 1–6 pulse dose
-   Battery: 4.5 hrs standard, 9 hrs extended | FAA approved: YES | MSRP ~$3,495
+   Weight: 4.8 lbs with standard battery | Settings: 1–6 pulse dose
+   Battery: up to 6 hrs 15 min standard, up to 12 hrs 45 min extended, on setting 1 | FAA approved: YES | MSRP ~$3,495
    Best for: Active lifestyle, those who want the latest technology
    Features: Redesigned ergonomics, quieter operation, improved battery efficiency
 
@@ -54,7 +62,7 @@ Medicare Part B covers portable oxygen equipment for eligible patients.
 Eligibility requirements: Doctor documents O2 saturation ≤ 88% at rest, during exercise, or while sleeping.
 Inogen handles all insurance billing directly — patients do not call the insurer themselves.
 Most major insurance plans accepted: Medicare, Medicaid, United, Aetna, Cigna, Humana, BCBS and more.
-Medicare rental model: After 36 months of rental payments, patient owns the equipment.
+Medicare rental model: Medicare's equipment payments end after 36 monthly rental payments. The supplier may keep ownership, and must keep providing and servicing the equipment for up to 5 years from first use.
 Private purchase also available — often preferred by patients who travel frequently or want immediate ownership.
 Financing: CareCredit and Ally Lending available. Monthly payments as low as $75/month with approved credit.
 Refurbished/certified pre-owned units available at 20–30% discount with 1-year warranty.
@@ -65,7 +73,7 @@ Step 2: Doctor's prescription is obtained (Inogen can provide a prescription tem
 Step 3: Insurance verification — Inogen contacts the insurer on the patient's behalf.
 Step 4: Equipment ships within 3–5 business days (expedited available).
 Step 5: Follow-up support call to ensure patient is comfortable with the device.
-Prescription required for Medicare/insurance orders. Cash purchase available without prescription.
+Inogen portable oxygen concentrators are available by prescription only.
 
 ━━━ WARRANTY & RETURNS ━━━
 New units: 3-year limited warranty | Refurbished units: 1-year warranty
@@ -105,7 +113,6 @@ Wholesale/dealer pricing available for qualified organizations.
 Rental program available for DME providers to offer to their patients.
 Training, marketing materials, and co-op advertising support included.
 Dedicated B2B account managers. Contract pricing for volume orders.
-Contact: dealer@inogen.com | B2B line: 1-877-466-4364
 Typical onboarding: 2–4 weeks for credentialing and first order.
 
 ━━━ COMPETITIVE ADVANTAGES ━━━

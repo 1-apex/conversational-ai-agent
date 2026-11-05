@@ -1,0 +1,213 @@
+%% STATUS: TARGET (proposed schema, not implemented). Only "calls" exists today, in a simpler form.
+erDiagram
+  organizations ||--o{ users : employs
+  organizations ||--o{ calls : owns
+  organizations ||--o{ knowledge_documents : owns
+  users ||--o{ user_roles : has
+  roles ||--o{ user_roles : grants
+  calls ||--o{ call_turns : contains
+  calls ||--o| call_summaries : summarized_by
+  calls ||--o{ safety_events : raises
+  calls ||--o{ escalations : triggers
+  call_turns ||--o{ safety_events : source_of
+  call_turns ||--o{ turn_citations : cites
+  knowledge_chunks ||--o{ turn_citations : cited_by
+  knowledge_documents ||--o{ knowledge_versions : versioned_as
+  knowledge_versions ||--o{ knowledge_chunks : split_into
+  escalations ||--o{ escalation_events : logs
+  users ||--o{ escalations : assigned
+  calls ||--o{ review_items : reviewed_in
+  review_items ||--o{ evaluation_cases : promoted_to
+  evaluation_datasets ||--o{ evaluation_cases : contains
+  evaluation_datasets ||--o{ evaluation_runs : used_by
+  evaluation_runs ||--o{ evaluation_results : produces
+  evaluation_cases ||--o{ evaluation_results : scored_in
+  prompt_versions ||--o{ call_turns : generated
+  safety_policies ||--o{ safety_events : applied
+  users ||--o{ audit_logs : acts_in
+  users ||--o{ sessions : holds
+  calls ||--o{ follow_up_tasks : creates
+  users ||--o{ follow_up_tasks : owns
+
+  sessions {
+    uuid id PK
+    uuid user_id FK
+    timestamptz expires_at
+    timestamptz revoked_at
+  }
+  follow_up_tasks {
+    uuid id PK
+    uuid call_id FK
+    uuid owner_id FK
+    text description
+    text status
+    date due_date
+  }
+  organizations {
+    uuid id PK
+    text name
+    timestamptz created_at
+  }
+  users {
+    uuid id PK
+    uuid organization_id FK
+    text email UK
+    text status
+  }
+  roles {
+    text name PK
+  }
+  user_roles {
+    uuid user_id PK, FK
+    text role_name PK, FK
+  }
+  calls {
+    uuid id PK
+    uuid organization_id FK
+    text state
+    text active_agent
+    text data_mode
+    timestamptz started_at
+    timestamptz ended_at
+    timestamptz retention_expires_at
+  }
+  call_turns {
+    uuid id PK
+    uuid call_id FK
+    int sequence
+    text speaker
+    text agent
+    text text_content
+    text validation_status
+    uuid prompt_version_id FK
+    text model_id
+  }
+  call_summaries {
+    uuid call_id PK, FK
+    jsonb intelligence
+    text method
+    text model_id
+    boolean human_corrected
+  }
+  safety_events {
+    uuid id PK
+    uuid call_id FK
+    uuid turn_id FK
+    uuid policy_id FK
+    text category
+    text severity
+    text action_taken
+    text detector
+  }
+  safety_policies {
+    uuid id PK
+    text version UK
+    jsonb rules
+    text approved_by
+    text status
+  }
+  prompt_versions {
+    uuid id PK
+    text agent
+    text version
+    text content_hash
+    text status
+  }
+  escalations {
+    uuid id PK
+    uuid call_id FK
+    uuid assigned_to FK
+    text reason
+    text priority
+    text status
+    text encrypted_contact
+  }
+  escalation_events {
+    uuid id PK
+    uuid escalation_id FK
+    uuid actor_id FK
+    text event_type
+    timestamptz created_at
+  }
+  knowledge_documents {
+    uuid id PK
+    uuid organization_id FK
+    text title
+    text source_type
+    text product
+  }
+  knowledge_versions {
+    uuid id PK
+    uuid document_id FK
+    text version
+    text status
+    date effective_date
+    text content_hash
+    uuid uploaded_by FK
+    uuid approved_by FK
+  }
+  knowledge_chunks {
+    uuid id PK
+    uuid version_id FK
+    text section
+    text source_location
+    text content
+    vector embedding
+    tsvector search_vector
+    text content_hash
+  }
+  turn_citations {
+    uuid turn_id PK, FK
+    uuid chunk_id PK, FK
+    uuid version_id FK
+  }
+  review_items {
+    uuid id PK
+    uuid call_id FK
+    uuid reviewer_id FK
+    text failure_class
+    text notes
+    text status
+  }
+  evaluation_datasets {
+    uuid id PK
+    text version UK
+    text content_hash
+  }
+  evaluation_cases {
+    text id PK
+    uuid dataset_id FK
+    text category
+    text severity
+    jsonb definition
+    uuid source_review_id FK
+  }
+  evaluation_runs {
+    uuid id PK
+    uuid dataset_id FK
+    text model_id
+    text prompt_version
+    text policy_version
+    text knowledge_version
+    jsonb aggregates
+    text gate_result
+  }
+  evaluation_results {
+    uuid id PK
+    uuid run_id FK
+    text case_id FK
+    boolean passed
+    jsonb scores
+    jsonb response_snapshot
+  }
+  audit_logs {
+    bigint id PK
+    uuid actor_id FK
+    text action
+    text target_type
+    text target_id
+    text correlation_id
+    text prev_hash
+    text entry_hash
+    timestamptz created_at
+  }
