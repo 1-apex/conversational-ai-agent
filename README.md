@@ -40,6 +40,7 @@ Set at least `GROQ_API_KEY` in `.env`, then open http://localhost:3000 in Chrome
 | `npm run build` / `npm start` | Production build and server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript check |
+| `npm test` | Automated tests; no keys or database needed |
 
 ## Known limitations
 
@@ -48,7 +49,7 @@ This project is being hardened in phases, and the following are still true:
 - `/dashboard`, `/api/analytics` and `/api/calls` have **no authentication**. Don't deploy it publicly with logging enabled.
 - Replies aren't validated before they are spoken.
 - Emergency handling is a basic phrase check. It will miss things.
-- There are no automated tests yet.
+- Automated tests cover the API and safety logic with mocked providers. There are no end-to-end browser tests yet.
 - Speech goes to outside services, so don't use real personal or health information.
 
 ## Documentation

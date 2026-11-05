@@ -6,13 +6,15 @@
 
 All are unauthenticated. `/api/agent` returns a fixed emergency message without calling the LLM if the input or any earlier caller turn matches the interim phrase check, and it prepends the demo disclosure to the opening greeting.
 
-| Method and path | Rate limit | Request | Response | Issues |
-| --- | --- | --- | --- | --- |
-| `POST /api/agent` | 30/min per IP | `{ history?: AgentTurn[], userInput?: string, currentAgent?: AgentName }` | `{ reply, agent, handoff }`; 429; 500 `{ error }` including upstream text | Client controls state; no size limits |
-| `POST /api/tts` | 30/min per IP | `{ text: string }` (client also sends `agent`, which is ignored) | `audio/mpeg` stream; 400; 429; 501 without a key; 500 | Speaks any text; no length limit |
-| `POST /api/extract` | 5/min per IP | `{ turns: TranscriptTurn[], duration?: number }` | `CallBriefData`; 400; 429; 500 | No size limit; provider failure doesn't fall back |
-| `POST /api/calls` | None | `{ id, startedAt, duration?, agentsUsed?, turns?, brief?, sentiment? }` | `{ ok: true }`; `{ ok: false, reason: "no-db" }`; 400; 500 with DB error text | Open write |
-| `GET /api/analytics` | None | — | `{ calls: [...] }`, last 100, no transcripts; 503 `{ error: "no-db" }` | Open read of briefs |
+All use the route wrapper. Errors are `{ "error": { "code", "correlationId" } }`, and every response has an `X-Correlation-Id` header. Common errors: `400 invalid_json`, `400 invalid_request`, `413 payload_too_large`, `429 rate_limited`, `500 internal_error`.
+
+| Method and path | Rate limit (per min) | Body limit | Request | Response | Issues |
+| --- | --- | --- | --- | --- | --- |
+| `POST /api/agent` | 30 | 1 MB | `{ history?: up to 200 turns, userInput?: up to 2,000 chars, currentAgent?: AgentName }` | `{ reply, agent, handoff }`; `502 upstream_error` | Client still controls state |
+| `POST /api/tts` | 30 | 8 KB | `{ text: 1 to 1,000 chars }` | `audio/mpeg` stream; `501 tts_not_configured`; `502 upstream_error` | Speaks any text |
+| `POST /api/extract` | 5 | 2 MB | `{ turns: 1 to 500, duration?: number }` | `CallBriefData` | Open to anyone |
+| `POST /api/calls` | 10 | 2 MB | `{ id, startedAt: ISO date, duration?, agentsUsed?, turns?, brief?, sentiment? }` | `{ ok: true }`; `{ ok: false, reason: "no-db" }` | Open write |
+| `GET /api/analytics` | 30 | — | — | `{ calls: [...] }`, last 100, no transcripts; `503 no-db` | Open read of briefs |
 
 ## Proposed conventions
 

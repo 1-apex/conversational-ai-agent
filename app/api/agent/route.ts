@@ -1,80 +1,42 @@
-import { NextRequest, NextResponse } from "next/server";
-import { AgentName, AgentTurn, AgentApiResponse } from "@/lib/types";
+import { NextResponse } from "next/server";
+import { AgentApiResponse } from "@/lib/types";
 import { AGENT_SYSTEM_PROMPTS } from "@/lib/agent-prompts";
-import { agentLimiter, getIp } from "@/lib/rate-limit";
+import { parseAgentResponse } from "@/lib/agent-response";
 import { DEMO_DISCLOSURE } from "@/lib/demo-notice";
 import { EMERGENCY_MESSAGE, isEmergencyStatement } from "@/lib/emergency-offramp";
+import { route } from "@/lib/http/route";
+import { AgentRequestSchema } from "@/lib/http/schemas";
+import { agentLimiter } from "@/lib/rate-limit";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL    = "llama-3.3-70b-versatile";
 
+// The model sees recent turns only. The emergency check below still sees all of them.
+const MAX_TURNS_TO_MODEL = 40;
+const GROQ_TIMEOUT_MS    = 15_000;
+
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 interface GroqResponse { choices: { message: { content: string } }[]; }
 
-const VALID_AGENTS = new Set<AgentName>(["orchestrator", "sales", "product", "general", "b2b"]);
-function isAgentName(v: unknown): v is AgentName {
-  return typeof v === "string" && VALID_AGENTS.has(v as AgentName);
-}
-
-function parseResponse(text: string, fallback: AgentName): AgentApiResponse {
-  const clean = text.trim();
-
-  // Best case: entire response is valid JSON
-  try {
-    const parsed = JSON.parse(clean) as Record<string, unknown>;
-    return {
-      reply:   typeof parsed.reply   === "string" ? parsed.reply   : clean,
-      agent:   isAgentName(parsed.agent)          ? parsed.agent   : fallback,
-      handoff: isAgentName(parsed.handoff)        ? parsed.handoff : null,
-    };
-  } catch { /* */ }
-
-  // Fallback: model leaked JSON at the end of a plain-text reply
-  const jsonMatch = clean.match(/\{[\s\S]+\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      const handoff = isAgentName(parsed.handoff) ? parsed.handoff : null;
-      const agent   = isAgentName(parsed.agent)   ? parsed.agent   : fallback;
-      // If the JSON had a proper reply field, use it; otherwise strip the
-      // leaked JSON fragment from the raw text so it never reaches the caller
-      const reply = typeof parsed.reply === "string" && parsed.reply
-        ? parsed.reply
-        : clean.replace(jsonMatch[0], "").trim().replace(/[.?\s]+$/, "") || clean;
-      return { reply, agent, handoff };
-    } catch { /* */ }
-  }
-
-  return { reply: clean, agent: fallback, handoff: null };
-}
-
-export async function POST(req: NextRequest) {
-  const { success } = await agentLimiter.limit(getIp(req));
-  if (!success) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-  }
-
-  try {
-    const body = (await req.json()) as {
-      history?:       AgentTurn[];
-      userInput?:     string;
-      currentAgent?:  AgentName;
-    };
-
-    const history:      AgentTurn[] = Array.isArray(body.history) ? body.history : [];
-    const userInput:    string      = typeof body.userInput === "string" ? body.userInput : "";
-    const currentAgent: AgentName   = isAgentName(body.currentAgent) ? body.currentAgent : "orchestrator";
+export const POST = route({
+  name: "agent",
+  access: "public",
+  limiter: agentLimiter,
+  body: AgentRequestSchema,
+  maxBytes: 1024 * 1024,
+  handler: async ({ body, fail, log }) => {
+    const { history, userInput, currentAgent } = body;
 
     // Interim emergency off-ramp: no LLM reply, and it stays on for the rest of the
     // call, so a later question can't drop back into a normal sales conversation.
-    const callerTexts = [userInput, ...history.filter((t) => t?.role === "user").map((t) => t.content)];
+    const callerTexts = [userInput, ...history.filter((t) => t.role === "user").map((t) => t.content)];
     if (callerTexts.some(isEmergencyStatement)) {
       const reply: AgentApiResponse = { reply: EMERGENCY_MESSAGE, agent: currentAgent, handoff: null };
       return NextResponse.json(reply);
     }
 
     // Build Groq message array from conversation history
-    const messages: GroqMessage[] = history.map((t) => ({
+    const messages: GroqMessage[] = history.slice(-MAX_TURNS_TO_MODEL).map((t) => ({
       role:    t.role === "agent" ? "assistant" : "user",
       content: t.content,
     }));
@@ -105,18 +67,20 @@ export async function POST(req: NextRequest) {
         method:  "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
         body:    payload,
+        signal:  AbortSignal.timeout(GROQ_TIMEOUT_MS),
       });
       if (res.ok || !RETRYABLE.has(res.status)) break;
+      log.warn("provider.retryable_error", { provider: "groq", status: res.status, attempt });
     }
 
     if (!res!.ok) {
-      const err = await res!.text();
-      return NextResponse.json({ error: `Groq ${res!.status}: ${err}` }, { status: 500 });
+      log.error("provider.failed", { provider: "groq", status: res!.status });
+      return fail("upstream_error", 502);
     }
 
     const data   = (await res!.json()) as GroqResponse;
     const raw    = data.choices[0].message.content;
-    const parsed = parseResponse(raw, currentAgent);
+    const parsed = parseAgentResponse(raw, currentAgent);
 
     // If handoff is same as current agent, clear it
     if (parsed.handoff === currentAgent) parsed.handoff = null;
@@ -125,8 +89,5 @@ export async function POST(req: NextRequest) {
     if (!userInput && history.length === 0) parsed.reply = `${DEMO_DISCLOSURE} ${parsed.reply}`;
 
     return NextResponse.json(parsed);
-  } catch (error) {
-    console.error("Agent route error:", error instanceof Error ? error.message : "Unknown");
-    return NextResponse.json({ error: "Agent failed" }, { status: 500 });
-  }
-}
+  },
+});

@@ -1,6 +1,6 @@
 # 20 — Production Readiness Checklist
 
-**Assessed: 2026-11-04, commit `ef361c0`; updated 2026-11-05 for Phase 0 on branch `phase-0-risk-reduction`. Overall status: NOT approved for real callers.** The only status reached is partial Development-ready.
+**Assessed: 2026-11-04, commit `ef361c0`; updated 2026-11-05 for Phase 0 (deployed) and Phase 1 part 1 (not yet deployed). Overall status: NOT approved for real callers.** The only status reached is partial Development-ready.
 
 ## Readiness statuses
 
@@ -31,16 +31,16 @@ Allowed values: PASS, FAIL, PARTIAL, NOT VERIFIED, NOT APPLICABLE. Every PASS ci
 | Lint passes | **PASS** | `eslint` on 2026-11-05: exit 0, 0 errors, 5 `exhaustive-deps` warnings remain |
 | Live end-to-end call works | NOT VERIFIED | Not run; no keys |
 | Dashboard figures are correct | FAIL | Total capped at 100; time zone mix; substring sentiment |
-| Brief fallbacks work | FAIL | Rule brief entities always empty; provider failure doesn't fall back |
+| Brief fallbacks work | PARTIAL | Provider failure now falls through, tested with mocks; rule brief entities are still always empty |
 
 ### Automated testing
 
 | Item | Status | Evidence or reason |
 | --- | --- | --- |
-| Unit and integration tests | FAIL | None exist |
+| Unit and integration tests | PARTIAL | 103 Vitest tests pass with mocked providers; 6 of 6 deliberate safety breaks were caught. No database tests yet |
 | End-to-end tests | FAIL | None exist |
-| CI | FAIL | No `.github/` directory |
-| Security tests | FAIL | None exist |
+| CI | PARTIAL | `.github/workflows/ci.yml` added, but hasn't run yet |
+| Security tests | PARTIAL | Input abuse, error leakage, canary logging and forged IP covered; authorization tests wait for auth |
 
 ### Critical safety
 
@@ -71,7 +71,7 @@ Allowed values: PASS, FAIL, PARTIAL, NOT VERIFIED, NOT APPLICABLE. Every PASS ci
 | Server-side RBAC | FAIL | Absent |
 | Session expiry and revocation | FAIL | Absent |
 | Record-level and tenant scoping | FAIL | Absent |
-| Rate limiting across all routes | PARTIAL | 3 of 5 routes; spoofable key on some hosts |
+| Rate limiting across all routes | PARTIAL | All 5 routes, enforced by a test. In-memory unless Upstash is set, so limits are per instance on Vercel |
 
 ### Audit logging
 
@@ -90,7 +90,7 @@ Allowed values: PASS, FAIL, PARTIAL, NOT VERIFIED, NOT APPLICABLE. Every PASS ci
 | Retention and deletion | FAIL | Absent |
 | Caller notice | PARTIAL | Demo banner and spoken disclosure; no reviewed consent process |
 | PII and PHI minimisation | PARTIAL | Prompts no longer ask for health or contact details; nothing filters what callers say |
-| Security headers | PARTIAL | `next.config.ts` sets several; no CSP or HSTS |
+| Security headers | PARTIAL | CSP and HSTS added and verified on a local production build; the CSP allows inline scripts |
 | Dependency vulnerabilities | PARTIAL | 2026-11-05: 0 critical or high; `--omit=dev` reports 0; 8 moderate in dev-only lint tooling. No CI policy yet |
 
 ### Vendor and contractual

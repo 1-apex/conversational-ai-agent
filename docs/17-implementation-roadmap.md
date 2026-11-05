@@ -11,8 +11,8 @@ Ordered by how much they block.
 | # | Decision | Why it matters | Safe default if unanswered |
 | --- | --- | --- | --- |
 | D1 | **Resolved 2026-11-05: independent demo, not authorized by Inogen.** See [effect of this decision](#effect-of-the-independent-demo-decision) | Sets clinical and legal ownership, sources, BAAs, and how the app may present itself | — |
-| D2 | **Is any deployment live or public, and does any database hold real caller data?** | If so, R-03 is an active exposure | Assume yes until checked; you confirm, since I have no access |
-| D3 | Existing `calls` data: migrate, export or delete? | Deletion is irreversible | Leave untouched; do not migrate |
+| D2 | **Answered by a check on 2026-11-05: production is live and public on Vercel, with no database configured,** so no call data is exposed. Phase 0 was deployed the same day | Keep `DATABASE_URL` off public deployments until staff auth exists | — |
+| D3 | Existing `calls` data: migrate, export or delete? The production deployment has no database, so this applies only if you have another one | Deletion is irreversible | Leave untouched; do not migrate |
 | D4 | Who are the clinical, privacy and operational owners? | Scripts and policies can't be approved without them | Scripts stay marked NOT APPROVED, so `phi_approved` can't be turned on |
 | D5 | Staff authentication approach | [ADR-008](adr/ADR-008-authentication.md) | Auth.js with database sessions |
 | D6 | Single-organization or multi-tenant? | Scope | Single organization, with `organization_id` scoping |
@@ -70,7 +70,7 @@ The goal is now to demonstrate production-grade engineering on synthetic data. I
 
 Small and easily reviewed, with no new architecture.
 
-**Status: implemented 2026-11-05 on branch `phase-0-risk-reduction`, not yet merged. Not tested with a live model or a real microphone, because no provider keys were available and the test browser blocks the mic.** Results are in the [audit](01-repository-audit.md#9-remediation-since-this-audit). T0.4 was checked with a throwaway script, not a committed test, because the test runner arrives in T1.1.
+**Status: merged and deployed to production 2026-11-05 (`d3d5f8a`, PR #1). Not tested with a live model or a real microphone, because no provider keys were available and the test browser blocks the mic.** Results are in the [audit](01-repository-audit.md#9-remediation-since-this-audit). T0.4 was checked with a throwaway script, not a committed test, because the test runner arrives in T1.1.
 
 | Task | Priority | Depends on | Files | Implementation | Acceptance | Tests | Security note | Size |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -85,6 +85,17 @@ Small and easily reviewed, with no new architecture.
 T0.4 is deliberately modest and may never be enough by itself. It's a stopgap until Phase 2.
 
 ## Phase 1: Engineering foundations
+
+**Status, 2026-11-05, on branch `phase-1-foundations`:**
+
+| Task | Status |
+| --- | --- |
+| T1.1 Test harness and CI | Partial: Vitest and CI added. CI not yet run. Playwright moved to when staff login exists |
+| T1.3 Route wrapper | Done |
+| T1.9 Logging and rate limits | Done |
+| T1.10 Security headers | Done, tested on a local production build. Streaming TTS playback under the CSP is untested without a key |
+| T1.11 Voice failure states | Done, tested with a blocked mic |
+| T1.2, T1.4, T1.5, T1.6, T1.7, T1.8 | **Not started: all need a database** |
 
 | Task | Priority | Depends on | Files | Implementation | Acceptance | Tests | Security note | Size |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
