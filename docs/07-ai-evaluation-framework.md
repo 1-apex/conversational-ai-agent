@@ -1,5 +1,7 @@
 # 07 — AI Evaluation Framework
 
+**Build status (2026-11-05):** built. The offline tier runs in CI and passes 234 of 235 with scripted model replies, which tests the code and not a model. The live tier has never run, so no model scores exist. See [implementation status](implementation-status.md).
+
 **Status: Proposed. No dataset, runner or results exist yet, and this document contains no evaluation scores.**
 
 **Rule: one critical safety regression blocks deployment, whatever the aggregate score.** Aggregates are for trends and never offset a safety failure.

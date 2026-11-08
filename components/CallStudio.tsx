@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
 import {
-  CallStatus, AgentName, AgentState, AgentTurn, AgentApiResponse, CallBriefData,
+  CallStatus, AgentName, AgentState, AgentTurn, CallBriefData,
 } from "@/lib/types";
-import { DEMO_DISCLOSURE, NO_LIVE_STAFF_MESSAGE } from "@/lib/demo-notice";
+import { NO_LIVE_STAFF_MESSAGE } from "@/lib/demo-notice";
 import { EMERGENCY_MESSAGE, isEmergencyStatement } from "@/lib/emergency-offramp";
-import { MAX_HISTORY } from "@/lib/limits";
+import { scoreSentiment, Sentiment } from "@/lib/sentiment";
 import DemoNotice from "./DemoNotice";
+import CallbackForm from "./CallbackForm";
 import TypedInput from "./TypedInput";
 import { AGENT_META } from "./AgentBadge";
 import AgentBadge from "./AgentBadge";
@@ -73,6 +74,18 @@ function correctTranscript(text: string): string {
   return r;
 }
 
+interface TurnResponse {
+  callToken: string;
+  turnId: string;
+  text: string;
+  agent: AgentName;
+  nextAgent: AgentName;
+  pathway: string;
+  handoff: boolean;
+  escalationId: string | null;
+  speechToken: string;
+}
+
 // ── ElevenLabs quota (localStorage, which doesn't exist during prerender) ─
 const quotaListeners = new Set<() => void>();
 
@@ -107,12 +120,15 @@ export default function CallStudio() {
   const [briefError,     setBriefError]     = useState("");
   const quotaUsed = useSyncExternalStore(subscribeQuota, readQuota, () => 0);
   const [transferring,   setTransferring]   = useState(false);
-  const [sentiment,      setSentiment]      = useState<"positive"|"neutral"|"negative">("neutral");
+  const [sentiment,      setSentiment]      = useState<Sentiment>("neutral");
   const [speakingTurnId, setSpeakingTurnId] = useState("");
   const [voiceError,     setVoiceError]     = useState("");
+  const [escalationId,   setEscalationId]   = useState<string | null>(null);
+  const [callToken,      setCallToken]      = useState("");
 
   const callIdRef    = useRef("");
-  const callStartRef = useRef("");
+  // Signed by the server: the browser carries the call state but can't change it
+  const callTokenRef = useRef("");
 
   const EL_QUOTA_LIMIT = 10_000;
   const EL_QUOTA_WARN  = 8_000;
@@ -231,18 +247,7 @@ export default function CallStudio() {
       clearSilenceWatcher();
 
       if (checkinCountRef.current >= 2) return;
-
-      const msg = checkinCountRef.current === 1
-        ? "Just checking — are you still there?"
-        : "No worries, take your time. I'm here whenever you're ready.";
-
-      const checkInTurn: AgentTurn = {
-        id: genId(), role: "agent", content: msg,
-        agent: activeAgentRef.current, timestamp: Date.now(),
-      };
-      setTurns((prev) => [...prev, checkInTurn]);
-      turnsRef.current = [...turnsRef.current, checkInTurn];
-      speak(msg, activeAgentRef.current);
+      callAgent("", "silence");
     }, 1000);
   }
 
@@ -274,7 +279,7 @@ export default function CallStudio() {
   }
 
   // ── TTS: try ElevenLabs first, fall back to Web Speech ────────────────
-  const speak = useCallback(async (text: string, agent: AgentName, afterSpeak?: () => void) => {
+  const speak = useCallback(async (text: string, speechToken: string | null, afterSpeak?: () => void) => {
     mute();
     recognitionRef.current?.abort();
     recognitionRef.current   = null;
@@ -303,13 +308,14 @@ export default function CallStudio() {
     };
 
     try {
+      if (!speechToken) throw new Error("no-token"); // an offline message, so the local voice reads it
       const controller = new AbortController();
       const ttsTimeout = setTimeout(() => controller.abort(), 4000);
 
       const res = await fetch("/api/tts", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ text: cleaned, agent }),
+        body:    JSON.stringify({ speechToken }),
         signal:  controller.signal,
       });
       clearTimeout(ttsTimeout);
@@ -501,7 +507,7 @@ export default function CallStudio() {
   }
 
   // ── Core agent call ────────────────────────────────────────────────────
-  const callAgent = useCallback(async (userInput: string) => {
+  const callAgent = useCallback(async (userInput: string, event: "message" | "takeover" | "silence" = "message") => {
     if (!isActiveRef.current) return;
 
     clearSilenceWatcher();
@@ -511,12 +517,10 @@ export default function CallStudio() {
     recognitionRef.current?.abort();
     recognitionRef.current = null;
 
-    let snapshot = turnsRef.current;
     if (userInput) {
       const userTurn: AgentTurn = { id: genId(), role: "user", content: userInput, timestamp: Date.now() };
-      snapshot = [...snapshot, userTurn];
-      setTurns(snapshot);
-      turnsRef.current = snapshot;
+      turnsRef.current = [...turnsRef.current, userTurn];
+      setTurns(turnsRef.current);
       setSentiment(scoreSentiment(userInput));
     }
 
@@ -524,48 +528,51 @@ export default function CallStudio() {
     agentStateRef.current = "thinking";
 
     try {
-      const res = await fetch("/api/agent", {
+      const res = await fetch(`/api/calls/${callIdRef.current}/turns`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          history:      snapshot.slice(-MAX_HISTORY),
-          userInput,
-          currentAgent: activeAgentRef.current,
-        }),
+        body: JSON.stringify({ callToken: callTokenRef.current, event, text: userInput || undefined }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as AgentApiResponse;
+      const data = (await res.json()) as TurnResponse;
       if (!isActiveRef.current) return; // call ended while this reply was in flight
 
-      const isHandoff = !!data.handoff && data.handoff !== activeAgentRef.current;
-      if (isHandoff) {
-        setActiveAgent(data.handoff!);
-        activeAgentRef.current = data.handoff!;
-      }
+      callTokenRef.current = data.callToken;
+      setCallToken(data.callToken);
+      if (data.escalationId) setEscalationId(data.escalationId);
+
+      setActiveAgent(data.nextAgent);
+      activeAgentRef.current = data.nextAgent;
 
       const agentTurn: AgentTurn = {
-        id: genId(), role: "agent", content: data.reply,
+        id: data.turnId, role: "agent", content: data.text,
         agent: data.agent, timestamp: Date.now(),
       };
-      const withAgent = [...turnsRef.current, agentTurn];
-      setTurns(withAgent);
-      turnsRef.current = withAgent;
+      turnsRef.current = [...turnsRef.current, agentTurn];
+      setTurns(turnsRef.current);
 
       setSpeakingTurnId(agentTurn.id);
-      if (isHandoff) {
-        speak(data.reply, data.agent, () => {
-          if (isActiveRef.current) callAgent("");
+      if (data.handoff) {
+        speak(data.text, data.speechToken, () => {
+          if (isActiveRef.current) callAgent("", "takeover");
         });
       } else {
-        speak(data.reply, data.agent);
+        speak(data.text, data.speechToken);
       }
     } catch (err) {
       console.error("Agent call failed:", err);
+      if (event !== "message") {
+        // A check-in or takeover that failed has nothing to say, so go back to listening
+        setAgentState("listening");
+        agentStateRef.current = "listening";
+        startListening();
+        return;
+      }
       // The API is unreachable here, so these checks have to run in the browser
       const message = isEmergencyStatement(userInput)
         ? EMERGENCY_MESSAGE
-        : `${snapshot.length === 0 ? `${DEMO_DISCLOSURE} ` : ""}Sorry, I didn't catch that — could you say that again?`;
+        : "Sorry, I didn't catch that — could you say that again?";
       // Saved as a turn so the words are on screen even if audio fails too
       const fallbackTurn: AgentTurn = {
         id: genId(), role: "agent", content: message,
@@ -573,7 +580,7 @@ export default function CallStudio() {
       };
       turnsRef.current = [...turnsRef.current, fallbackTurn];
       setTurns(turnsRef.current);
-      speak(message, activeAgentRef.current);
+      speak(message, null);
     }
   }, [speak]);
 
@@ -584,19 +591,31 @@ export default function CallStudio() {
     setBrief(null);                  setBriefError("");
     setElapsed(0);                   finalTextRef.current   = "";
     setVoiceError("");
+    setEscalationId(null);
     setSentiment("neutral");
     setSpeakingTurnId("");
     accumulatedTextRef.current = "";
     if (processingTimerRef.current) { clearTimeout(processingTimerRef.current); processingTimerRef.current = null; }
 
-    callIdRef.current    = genId();
-    callStartRef.current = new Date().toISOString();
     checkinCountRef.current   = 0;
     lastSpeechTimeRef.current = Date.now();
-    isActiveRef.current       = true;
+
+    let started: { callId: string; callToken: string; turnId: string; text: string; speechToken: string };
+    try {
+      const res = await fetch("/api/calls", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      started = await res.json();
+    } catch (err) {
+      console.error("Call failed to start:", err);
+      setVoiceError("The call couldn't start. Please try again.");
+      return;
+    }
+
+    callIdRef.current    = started.callId;
+    callTokenRef.current = started.callToken;
+    setCallToken(started.callToken);
+    isActiveRef.current  = true;
     setStatus("active");
-    setAgentState("thinking");
-    agentStateRef.current = "thinking";
 
     startTimeRef.current = Date.now();
     timerRef.current = setInterval(
@@ -604,8 +623,14 @@ export default function CallStudio() {
       1000
     );
 
-    await callAgent("");
-  }, [callAgent]);
+    const greeting: AgentTurn = {
+      id: started.turnId, role: "agent", content: started.text, agent: "orchestrator", timestamp: Date.now(),
+    };
+    turnsRef.current = [greeting];
+    setTurns(turnsRef.current);
+    setSpeakingTurnId(greeting.id);
+    speak(started.text, started.speechToken);
+  }, [speak]);
 
   const endCall = useCallback(async () => {
     isActiveRef.current   = false;
@@ -624,44 +649,19 @@ export default function CallStudio() {
     recognitionRef.current = null;
     setInterimText("");
 
-    const currentTurns = turnsRef.current;
-
-    const briefTurns = currentTurns.map((t) => ({
-      id: t.id, speaker: t.role === "agent" ? "agent" : "prospect" as "agent" | "prospect",
-      text: t.content, timestamp: t.timestamp,
-    }));
-
-    let callBrief: CallBriefData | null = null;
     try {
-      const res = await fetch("/api/extract", {
+      const res = await fetch(`/api/calls/${callIdRef.current}/end`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ turns: briefTurns, duration }),
+        body:    JSON.stringify({ callToken: callTokenRef.current }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      callBrief = (await res.json()) as CallBriefData;
-      setBrief(callBrief);
+      const data = (await res.json()) as { brief: CallBriefData };
+      setBrief({ ...data.brief, duration });
     } catch (err) {
       console.error("Brief failed:", err);
       setBriefError("The call ended, but a brief couldn't be generated.");
     }
-
-    const agentsUsed    = [...new Set(currentTurns.filter(t => t.agent).map(t => t.agent!))];
-    const userTexts     = currentTurns.filter(t => t.role === "user").map(t => t.content);
-    const finalSentiment = computeFinalSentiment(userTexts);
-    fetch("/api/calls", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id:        callIdRef.current,
-        startedAt: callStartRef.current,
-        duration,
-        agentsUsed,
-        turns:     currentTurns,
-        brief:     callBrief,
-        sentiment: finalSentiment,
-      }),
-    }).catch(() => { /* non-fatal */ });
 
     setStatus("done");
   }, []);
@@ -677,13 +677,33 @@ export default function CallStudio() {
     setAgentState("speaking");
     agentStateRef.current = "speaking";
     recognitionRef.current?.abort();
+    let message = NO_LIVE_STAFF_MESSAGE;
+    let turnId = genId();
+    try {
+      // Records the request. If it fails, the caller still gets the honest message.
+      const res = await fetch(`/api/calls/${callIdRef.current}/turns`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ callToken: callTokenRef.current, event: "human_request" }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as TurnResponse;
+        callTokenRef.current = data.callToken;
+        setCallToken(data.callToken);
+        if (data.escalationId) setEscalationId(data.escalationId);
+        turnId  = data.turnId;
+        message = data.text;
+      }
+    } catch { /* fall through with the local message */ }
+
     const noStaffTurn: AgentTurn = {
-      id: genId(), role: "agent", content: NO_LIVE_STAFF_MESSAGE,
+      id: turnId, role: "agent", content: message,
       agent: activeAgentRef.current, timestamp: Date.now(),
     };
     turnsRef.current = [...turnsRef.current, noStaffTurn];
     setTurns(turnsRef.current);
-    webSpeechFallback(NO_LIVE_STAFF_MESSAGE, () => endCall());
+    // Always the local voice, so the call can end as soon as it finishes
+    webSpeechFallback(message, () => endCall());
   }, [endCall]);
 
   const handleNewCall = useCallback(() => {
@@ -692,6 +712,7 @@ export default function CallStudio() {
     setAgentState("idle");
     setTransferring(false);
     setVoiceError("");
+    setEscalationId(null);
     setSentiment("neutral");
     setSpeakingTurnId("");
   }, []);
@@ -705,33 +726,6 @@ export default function CallStudio() {
     interruptRecRef.current?.abort();
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
-
-  // ── Sentiment scoring ─────────────────────────────────────────────────
-  const SENT_POS = ["great","thanks","thank","perfect","yes","interested","helpful","good","love","excellent","sure","definitely","absolutely","appreciate","wonderful","happy","excited"];
-  const SENT_NEG = ["no","not interested","cancel","disappointed","frustrated","expensive","problem","issue","wrong","bad","terrible","refuse","unhappy","difficult","complicated","too much","confusing"];
-
-  // Per-turn indicator (user message only — for live display)
-  function scoreSentiment(text: string): "positive"|"neutral"|"negative" {
-    const l   = text.toLowerCase();
-    const pos = SENT_POS.filter(w => l.includes(w)).length;
-    const neg = SENT_NEG.filter(w => l.includes(w)).length;
-    if (pos > neg + 1) return "positive";
-    if (neg > pos)     return "negative";
-    return "neutral";
-  }
-
-  // Aggregate across ALL user turns — used when logging the call
-  function computeFinalSentiment(userTexts: string[]): "positive"|"neutral"|"negative" {
-    let pos = 0, neg = 0;
-    for (const t of userTexts) {
-      const l = t.toLowerCase();
-      pos += SENT_POS.filter(w => l.includes(w)).length;
-      neg += SENT_NEG.filter(w => l.includes(w)).length;
-    }
-    if (pos > neg + 1) return "positive";
-    if (neg > pos)     return "negative";
-    return "neutral";
-  }
 
   const agentMeta = AGENT_META[activeAgent];
   const isEnding  = status === "ending";
@@ -854,18 +848,21 @@ export default function CallStudio() {
             {status === "done"   && <p className="text-sm text-gray-500">Call ended</p>}
           </div>
 
-          {status === "active" && voiceError && (
+          {(status === "active" || status === "idle") && voiceError && (
             <p role="alert" className="text-xs text-red-600 text-center max-w-xs">{voiceError}</p>
           )}
           {status === "active" && (
-            <TypedInput disabled={agentState === "thinking" || transferring} onSend={callAgent} />
+            <TypedInput disabled={agentState === "thinking" || transferring} onSend={(text) => callAgent(text)} />
           )}
         </div>
 
         {/* Right — Transcript / Brief */}
         <div className="w-3/5 flex flex-col overflow-hidden">
           {status === "done" && brief ? (
-            <CallBrief brief={brief} onNewCall={handleNewCall} />
+            <>
+              {escalationId && <CallbackForm callId={callIdRef.current} callToken={callToken} />}
+              <CallBrief brief={brief} onNewCall={handleNewCall} />
+            </>
           ) : status === "done" && briefError ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
               <p className="text-sm text-red-500">{briefError}</p>

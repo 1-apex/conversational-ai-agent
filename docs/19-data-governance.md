@@ -1,5 +1,7 @@
 # 19 — Data Governance
 
+**Build status (2026-11-05):** retention and deletion are built with the provisional periods here. Notice wording and periods still need owner approval. See [implementation status](implementation-status.md).
+
 **Status: Proposed. Retention periods and legal basis need approval by privacy and legal owners.** Today nothing is deleted, and callers receive no notice.
 
 **Principle: collect less, send less, keep less.** Voice data flows are shown in [`diagrams/data-flow.mmd`](diagrams/data-flow.mmd), which marks where PHI could enter and leave.

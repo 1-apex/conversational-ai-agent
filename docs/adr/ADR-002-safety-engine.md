@@ -1,6 +1,6 @@
 # ADR-002: Deterministic safety engine with raise-only LLM
 
-**Status:** Proposed. Policy content requires clinical approval.
+**Status:** Implemented. Policy content still requires clinical approval.
 **Date:** 2026-11-04
 
 ## Context

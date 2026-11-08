@@ -1,6 +1,6 @@
 # Engineering Documentation
 
-**Status: blueprint for review (2026-11-04). Apart from the audit of current behaviour, these documents describe a proposed target. Almost none of it is implemented yet.**
+**Status: much of the design is now built, on branch `platform-phases`. [Implementation status](implementation-status.md) says exactly what's real, and [the testing guide](testing-guide.md) is the checklist for trying it.**
 
 This is an independent demo, not affiliated with or authorized by Inogen, and it is built on synthetic data. The application at commit `ef361c0` is not production-ready and is not HIPAA compliant. No document here claims otherwise. [`20-production-readiness-checklist.md`](20-production-readiness-checklist.md) records the current status.
 
@@ -16,9 +16,11 @@ Use these labels when you read any document or diagram:
 
 ## Where to start
 
-1. [Repository audit](01-repository-audit.md): what exists and what is wrong with it.
-2. [System architecture](03-system-architecture.md): the proposed target.
-3. [Implementation roadmap](17-implementation-roadmap.md): the order of work and the decisions needed from you.
+1. [Implementation status](implementation-status.md): what's built, what differs from the design, what isn't done.
+2. [Testing guide](testing-guide.md): how to test it yourself.
+3. [Repository audit](01-repository-audit.md): what existed and what was wrong with it.
+4. [System architecture](03-system-architecture.md): the design.
+5. [Runbooks](runbooks.md): what to do when something goes wrong.
 
 ## Documents
 

@@ -1,6 +1,6 @@
 # ADR-001: Modular monolith on the existing stack
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-11-04
 
 ## Context

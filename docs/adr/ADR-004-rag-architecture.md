@@ -1,6 +1,6 @@
 # ADR-004: Hybrid retrieval with pgvector over approved documents
 
-**Status:** Proposed. Not yet validated: pgvector availability on the chosen plan, embedding provider, voice-turn latency.
+**Status:** Implemented for text documents. Not yet validated: pgvector on Neon, an embedding provider, voice-turn latency with real retrieval.
 **Date:** 2026-11-04
 
 ## Context

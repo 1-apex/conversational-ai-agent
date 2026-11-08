@@ -1,6 +1,6 @@
 # 17 — Implementation Roadmap
 
-**Status: Proposed, awaiting your review. No application code has been changed.** There are no dates, because scope depends on the decisions below. Complexity is relative: S, M, L, XL.
+**Status: most of this is built. [Implementation status](implementation-status.md) tracks each task and every difference from the plan below.** There are no dates, because scope depends on the decisions below. Complexity is relative: S, M, L, XL.
 
 **Recommended order: first stop callers from being misled and data from being exposed (Phase 0), then build foundations, then safety.** Phase 0 is added to your six phases because several P0 fixes are small and shouldn't wait for the larger work.
 
@@ -14,9 +14,9 @@ Ordered by how much they block.
 | D2 | **Answered by a check on 2026-11-05: production is live and public on Vercel, with no database configured,** so no call data is exposed. Phase 0 was deployed the same day | Keep `DATABASE_URL` off public deployments until staff auth exists | — |
 | D3 | Existing `calls` data: migrate, export or delete? The production deployment has no database, so this applies only if you have another one | Deletion is irreversible | Leave untouched; do not migrate |
 | D4 | Who are the clinical, privacy and operational owners? | Scripts and policies can't be approved without them | Scripts stay marked NOT APPROVED, so `phi_approved` can't be turned on |
-| D5 | Staff authentication approach | [ADR-008](adr/ADR-008-authentication.md) | Auth.js with database sessions |
+| D5 | Staff authentication approach | [ADR-008](adr/ADR-008-authentication.md) | **Built as custom sessions**, because Auth.js's password provider can't revoke database sessions |
 | D6 | Single-organization or multi-tenant? | Scope | Single organization, with `organization_id` scoping |
-| D7 | Migration tool | [ADR-010](adr/ADR-010-database-access-and-migrations.md) | Drizzle |
+| D7 | Migration tool | [ADR-010](adr/ADR-010-database-access-and-migrations.md) | Drizzle, as built |
 | D8 | STT for PHI | [ADR-009](adr/ADR-009-voice-pipeline.md) | Web Speech in synthetic mode only; decide later |
 | D9 | Retention periods | [`19`](19-data-governance.md) | Short provisional period in non-production |
 | D10 | Observability backend | [ADR-006](adr/ADR-006-observability.md) | App-level SQL views and redacted logs; no external backend |
@@ -95,7 +95,7 @@ T0.4 is deliberately modest and may never be enough by itself. It's a stopgap un
 | T1.9 Logging and rate limits | Done |
 | T1.10 Security headers | Done, tested on a local production build. Streaming TTS playback under the CSP is untested without a key |
 | T1.11 Voice failure states | Done, tested with a blocked mic |
-| T1.2, T1.4, T1.5, T1.6, T1.7, T1.8 | **Not started: all need a database** |
+| T1.2, T1.4, T1.5, T1.6, T1.7, T1.8 | Done on PGlite, on branch `platform-phases`. Not yet tested on Neon |
 
 | Task | Priority | Depends on | Files | Implementation | Acceptance | Tests | Security note | Size |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

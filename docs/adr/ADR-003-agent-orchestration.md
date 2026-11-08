@@ -1,6 +1,6 @@
 # ADR-003: Server-side state machine; LLM proposes, policy decides
 
-**Status:** Proposed
+**Status:** Implemented, with state in a signed token plus a database check rather than database-only
 **Date:** 2026-11-04
 
 ## Context

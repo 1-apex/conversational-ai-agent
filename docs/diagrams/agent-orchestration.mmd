@@ -1,4 +1,4 @@
-%% STATUS: TARGET (proposed, not implemented)
+%% STATUS: IMPLEMENTED in lib/conversation/state-machine.ts (2026-11-05, branch platform-phases).
 stateDiagram-v2
   [*] --> IDLE
   IDLE --> GREETING: call created, notice played
@@ -7,6 +7,7 @@ stateDiagram-v2
   LISTENING --> CALL_COMPLETED: hang-up or timeout
   SAFETY_CHECK --> HUMAN_ESCALATION: CRITICAL or HIGH
   SAFETY_CHECK --> INTENT_DETECTION: LOW or MODERATE
+  SAFETY_CHECK --> SPEAKING: scripted injection refusal
   INTENT_DETECTION --> ROUTING
   ROUTING --> AGENT_PROCESSING
   AGENT_PROCESSING --> RESPONSE_VALIDATION

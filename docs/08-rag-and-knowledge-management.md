@@ -1,5 +1,7 @@
 # 08 — RAG and Knowledge Management
 
+**Build status (2026-11-05):** ingestion, approval and hybrid retrieval are built and tested on PGlite, for text documents only. The legacy string is still the default, and no embedding provider is chosen. See [implementation status](implementation-status.md).
+
 **Status: Proposed.** See [ADR-004](adr/ADR-004-rag-architecture.md).
 
 **Only approved, versioned documents can support a customer-facing fact. When evidence is missing, the assistant says so and offers a person.**

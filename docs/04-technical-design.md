@@ -1,5 +1,7 @@
 # 04 — Technical Design
 
+**Build status (2026-11-05):** built, with differences: module paths are close to this but not identical, there is no `DATA_MODE` other than synthetic, and auth is custom sessions. See [implementation status](implementation-status.md).
+
 **Status: Proposed.** Names and shapes may change during implementation; update this file when they do.
 
 ## Module layout

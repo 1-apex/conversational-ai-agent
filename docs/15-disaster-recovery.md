@@ -1,5 +1,7 @@
 # 15 — Disaster Recovery
 
+**Build status (2026-11-05):** still entirely unexercised. No restore has been attempted. See [implementation status](implementation-status.md).
+
 **Status: Proposed and untested. No backup, restore or failover procedure has ever been exercised for this project.** A backup that has never been restored doesn't count as verified.
 
 ## Objectives

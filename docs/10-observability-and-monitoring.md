@@ -1,5 +1,7 @@
 # 10 — Observability and Monitoring
 
+**Build status (2026-11-05):** partly built: allowlisted logs, correlation IDs, per-turn timings and an Operations panel. No OpenTelemetry, external backend or alerts. See [implementation status](implementation-status.md).
+
 **Status: Proposed. Today the app has only scattered `console.error` calls.** See [ADR-006](adr/ADR-006-observability.md).
 
 **Recommendation: instrument with OpenTelemetry and export redacted spans. Langfuse is an optional backend, not a code dependency.** Spans carry IDs, timings and versions, with no transcript content by default.

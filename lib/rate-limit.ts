@@ -60,6 +60,9 @@ export const ttsLimiter       = makeLimiter(30, 60);
 export const extractLimiter   = makeLimiter(5,  60);
 export const callLogLimiter   = makeLimiter(10, 60);
 export const analyticsLimiter = makeLimiter(30, 60);
+export const loginLimiter     = makeLimiter(10, 60);
+export const staffLimiter     = makeLimiter(120, 60);
+export const callStartLimiter = makeLimiter(10, 60);
 
 // The first x-forwarded-for entry is whatever the client sent, so it can't be trusted.
 // Prefer headers the platform sets; otherwise use the last entry, added by the nearest proxy.

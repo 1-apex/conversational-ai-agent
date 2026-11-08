@@ -1,5 +1,7 @@
 # 11 — Human Escalation Workflow
 
+**Build status (2026-11-05):** built as a practice queue with encrypted callback numbers, in `app/support/`. No on-call alerting, and nobody really calls back. See [implementation status](implementation-status.md).
+
 **Status: Proposed.**
 
 **The old Transfer button told callers a specialist was being connected, then hung up. Since Phase 0, "Ask for a person" says plainly that this demo has no live person, then ends the call.** The target is a demonstrated callback queue. No live transfer will be claimed until real telephony exists.

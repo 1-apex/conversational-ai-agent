@@ -1,6 +1,6 @@
 # ADR-010: Versioned migrations with Drizzle; least-privilege roles
 
-**Status:** Proposed. **Needs your approval.**
+**Status:** Implemented with Drizzle, tested on PGlite. Separate database roles aren't done, and Neon isn't tested.
 **Date:** 2026-11-04
 
 ## Context

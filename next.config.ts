@@ -20,6 +20,7 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: ["@electric-sql/pglite", "@electric-sql/pglite-pgvector"],
   reactStrictMode: true,
   async headers() {
     return [
