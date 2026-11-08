@@ -1,5 +1,7 @@
 # 09 — Agent Orchestration
 
+**Build status (2026-11-05):** built in `lib/conversation/`. One transition was added: SAFETY_CHECK to SPEAKING, for the scripted injection refusal. See [implementation status](implementation-status.md).
+
 **Status: Proposed.** See [ADR-003](adr/ADR-003-agent-orchestration.md).
 
 **The five agents stay, but they lose control of the application.** Agents generate language. The orchestrator decides state, routing and capabilities.
@@ -17,7 +19,7 @@ Diagram: [`diagrams/agent-orchestration.mmd`](diagrams/agent-orchestration.mmd).
 | IDLE | GREETING |
 | GREETING | SPEAKING |
 | LISTENING | SAFETY_CHECK, CALL_COMPLETED |
-| SAFETY_CHECK | INTENT_DETECTION, HUMAN_ESCALATION |
+| SAFETY_CHECK | INTENT_DETECTION, HUMAN_ESCALATION, SPEAKING (scripted refusal) |
 | INTENT_DETECTION | ROUTING |
 | ROUTING | AGENT_PROCESSING |
 | AGENT_PROCESSING | RESPONSE_VALIDATION, ERROR |

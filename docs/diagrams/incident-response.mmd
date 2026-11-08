@@ -1,4 +1,4 @@
-%% STATUS: TARGET (proposed process). Requires named owners before use.
+%% STATUS: PROCESS ONLY. See docs/runbooks.md. No owners, never exercised (2026-11-05, branch platform-phases).
 flowchart LR
   detect["Detection: alerts, review findings, reports"] --> triage["Triage: severity, on-call lead"]
   triage --> contain["Containment: feature flag off, revoke keys, disable provider"]

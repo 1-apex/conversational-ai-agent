@@ -222,6 +222,8 @@ R-30 was confirmed in testing: spoken text loses its em dashes, as in "didn't ca
 | R-36 | **Fixed** | Fallback messages are saved as turns, and brief errors show a plain message |
 | R-03, R-07 | **Open: blocked** | Staff auth and server-held call state need a database |
 
+**Phases 1 to 6, 2026-11-05 (branch `platform-phases`, not deployed).** R-03, R-07, R-15, R-17, R-18, R-23, R-24, R-26 and most others are addressed in code. Each is tracked in [implementation status](implementation-status.md), which also lists what's open. New findings from the benchmark, all fixed: injection text using punctuation escaped normalization; numbers were checked without their units; a false-promise wording was missed; complaints mentioning orders were routed to Sales.
+
 **Deployment, checked 2026-11-05:** production is live on Vercel at `conversational-ai-agent-ten.vercel.app`, deployed from `main`. It ran `ef361c0` until Phase 0 was merged and deployed the same day (`d3d5f8a`); the new title, banner and emergency response were confirmed on the live site. Phase 1 isn't deployed yet. `/api/analytics` returned `503 no-db`, so that deployment isn't logging calls. The repository is public.
 
 ## 10. Limits of this audit

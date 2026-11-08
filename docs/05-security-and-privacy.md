@@ -1,5 +1,7 @@
 # 05 — Security and Privacy
 
+**Build status (2026-11-05):** auth, RBAC, audit log, validation, rate limits, headers, retention and field encryption are built. Contracts and legal review aren't, and code can't supply them. See [implementation status](implementation-status.md).
+
 **Status: Almost all controls are Proposed.** Nothing here establishes HIPAA compliance. Compliance also depends on risk analysis, policies, workforce training, contracts and legal determinations that code cannot provide.
 
 **Default posture: synthetic data only until the owners in [`20-production-readiness-checklist.md`](20-production-readiness-checklist.md) sign off.**

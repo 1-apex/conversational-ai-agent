@@ -1,6 +1,6 @@
 # ADR-007: Synthetic by default, provider policy gate, no stored audio
 
-**Status:** Proposed. Legal and privacy review required.
+**Status:** Implemented in simplified form: `DATA_MODE` can only be synthetic. Legal and privacy review would be required for anything else.
 **Date:** 2026-11-04
 
 ## Context

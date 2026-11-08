@@ -1,5 +1,7 @@
 # 06 — Healthcare Safety Framework
 
+**Build status (2026-11-05):** the engine, severity pathways and output validator are built in `lib/safety/`. Every script is still unapproved, and no clinician has reviewed anything. See [implementation status](implementation-status.md).
+
 **Status: Proposed. All caller-facing scripts and clinical boundaries need approval from a qualified clinical reviewer and counsel before any real caller hears them.** This document defines the engineering structure, not the clinical policy.
 
 **Principle: deterministic rules decide, and an LLM can only make the system more cautious.** No model output can lower a severity, unlock a blocked pathway, or suppress an escalation.

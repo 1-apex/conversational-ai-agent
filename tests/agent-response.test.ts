@@ -1,38 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { parseAgentResponse, UNPARSEABLE_REPLY } from "@/lib/agent-response";
+import { parseAgentResponse } from "@/lib/agent-response";
 
 describe("parseAgentResponse", () => {
-  it("parses a valid response", () => {
-    const raw = JSON.stringify({ reply: "Sure.", agent: "sales", handoff: "product" });
-    expect(parseAgentResponse(raw, "general")).toEqual({ reply: "Sure.", agent: "sales", handoff: "product" });
+  it("parses the contract", () => {
+    const raw = JSON.stringify({
+      reply: "Sure.", proposedAgent: "product", handoffReason: "specs", requestsEscalation: false, citedChunkIds: ["a"],
+    });
+    expect(parseAgentResponse(raw)).toMatchObject({
+      reply: "Sure.", proposedAgent: "product", citedChunkIds: ["a"], wellFormed: true,
+    });
   });
 
-  it("rejects invented agent names", () => {
-    const raw = JSON.stringify({ reply: "Hi", agent: "admin", handoff: "root" });
-    expect(parseAgentResponse(raw, "general")).toEqual({ reply: "Hi", agent: "general", handoff: null });
+  it("drops invented agent names and malformed fields", () => {
+    const raw = JSON.stringify({ reply: "Hi", proposedAgent: "root", requestsEscalation: "yes", citedChunkIds: "x" });
+    expect(parseAgentResponse(raw)).toMatchObject({ reply: "Hi", proposedAgent: null, requestsEscalation: false, citedChunkIds: [] });
+  });
+
+  it("reads the older handoff field", () => {
+    expect(parseAgentResponse(JSON.stringify({ reply: "Hi", handoff: "sales" })).proposedAgent).toBe("sales");
   });
 
   it("strips JSON leaked after plain text", () => {
-    const raw = `Sure, it's light. {"agent":"sales","handoff":null}`;
-    expect(parseAgentResponse(raw, "sales").reply).toBe("Sure, it's light");
+    expect(parseAgentResponse(`Sure, it's light. {"handoff":null}`).reply).toBe("Sure, it's light");
   });
 
   it("recovers the text when max_tokens truncates the JSON", () => {
-    const raw = `{"reply":"The G5 has six settings and a \\"quiet\\" mode, which`;
-    const parsed = parseAgentResponse(raw, "product");
-    expect(parsed.reply).toBe(`The G5 has six settings and a "quiet" mode, which`);
-    expect(parsed.reply).not.toContain("{");
+    const parsed = parseAgentResponse(`{"reply":"The G5 has a \\"quiet\\" mode, which`);
+    expect(parsed.reply).toBe(`The G5 has a "quiet" mode, which`);
+    expect(parsed.wellFormed).toBe(false);
   });
 
-  it.each([`{"agent":"sales"`, `{"reply":"`, `{`])("never speaks raw JSON: %s", (raw) => {
-    expect(parseAgentResponse(raw, "sales").reply).toBe(UNPARSEABLE_REPLY);
-  });
-
-  it("uses the fallback reply when a valid object has no reply", () => {
-    expect(parseAgentResponse(`{"agent":"sales"}`, "sales").reply).toBe(UNPARSEABLE_REPLY);
+  it.each([`{"agent":"sales"`, `{"reply":"`, `{`, `{"agent":"sales"}`])("returns no text for unusable output: %s", (raw) => {
+    expect(parseAgentResponse(raw).reply).toBe("");
   });
 
   it("passes plain text through", () => {
-    expect(parseAgentResponse("Just text.", "sales").reply).toBe("Just text.");
+    expect(parseAgentResponse("Just text.").reply).toBe("Just text.");
   });
 });

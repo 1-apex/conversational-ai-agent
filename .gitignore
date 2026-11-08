@@ -42,3 +42,8 @@ Thumbs.db
 # ---- Vercel ----
 .vercel
 
+# ---- Local data and reports ----
+.data/
+eval-reports/
+playwright-report/
+test-results/

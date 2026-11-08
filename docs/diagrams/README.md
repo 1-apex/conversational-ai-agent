@@ -1,6 +1,6 @@
 # Diagrams
 
-Mermaid source, with one concern per diagram. **The first line of each file states its status. `CURRENT STATE` diagrams reflect the code as their first line says, and `TARGET` diagrams show a proposed design that is not implemented.** Update them when the implementation changes, and label target diagrams as current once they ship.
+Mermaid source, with one concern per diagram. **The first line of each file states its status, including any part that wasn't built.** The two `current` diagrams describe the code before this work, and are kept as a record. Update diagrams when the implementation changes.
 
 All files were checked with the Mermaid 11 parser on 2026-11-04. Parsing confirms valid syntax; it doesn't confirm visual layout, so check large diagrams when rendering. GitHub renders Mermaid only inside fenced blocks, so to preview a `.mmd` file use a Mermaid editor extension or [mermaid.live](https://mermaid.live).
 

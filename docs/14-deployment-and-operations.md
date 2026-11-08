@@ -1,5 +1,7 @@
 # 14 — Deployment and Operations
 
+**Build status (2026-11-05):** CI, health checks and a daily retention cron exist. Feature flags, a staging environment and alerting don't. See [implementation status](implementation-status.md).
+
 **Status: Proposed. Vercel is confirmed as the host:** production deploys from `main` to `conversational-ai-agent-ten.vercel.app`, and pull requests get preview deployments. This plan adds no new infrastructure.
 
 Diagrams: [`deployment-architecture.mmd`](diagrams/deployment-architecture.mmd), [`ci-cd-pipeline.mmd`](diagrams/ci-cd-pipeline.mmd), [`incident-response.mmd`](diagrams/incident-response.mmd).

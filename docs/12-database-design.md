@@ -1,5 +1,7 @@
 # 12 — Database Design
 
+**Build status (2026-11-05):** built as `lib/db/schema.ts` and `db/migrations/`, tested on PGlite. The table list differs: see the ER diagram. No separate database roles or row-level security yet. See [implementation status](implementation-status.md).
+
 **Status: Proposed.** ER diagram: [`diagrams/database-er.mmd`](diagrams/database-er.mmd). See [ADR-010](adr/ADR-010-database-access-and-migrations.md).
 
 **Move from one JSON-heavy table with runtime DDL to normalized tables with versioned migrations and least-privilege roles.**

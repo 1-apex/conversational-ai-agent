@@ -1,5 +1,7 @@
 # 03 — System Architecture
 
+**Build status (2026-11-05):** the turn pipeline, safety engine, retrieval and staff layers below are built, on branch `platform-phases`. The call state is a signed token, not database-only. See [implementation status](implementation-status.md).
+
 **Status: Proposed. Nothing in the target section is implemented.**
 
 **The core change is moving control from the browser and prompts to one server-side turn pipeline.** It stays a single Next.js application on the existing stack: no microservices, no new datastore.

@@ -1,6 +1,6 @@
 # ADR-006: OpenTelemetry with redacted export
 
-**Status:** Proposed. Backend undecided.
+**Status:** Partly implemented: allowlisted logs and stored timings. OpenTelemetry not added, and no backend chosen.
 **Date:** 2026-11-04
 
 ## Context

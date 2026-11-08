@@ -8,7 +8,7 @@ describe("isEmergencyStatement", () => {
     "I'm having chest pain", "I think it's a heart attack", "my mom had a stroke",
     "he passed out", "she's unconscious", "his lips are blue", "he won't wake up",
     "I feel like I'm suffocating", "I'm really struggling for air",
-    "I want to kill myself", "I'm dying", "this is an emergency",
+    "I want to kill myself", "I'm dying", "my wife is dying", "this is an emergency",
     "I need an ambulance", "please call 911", "my concentrator caught fire",
   ])("matches %j", (text) => {
     expect(isEmergencyStatement(text)).toBe(true);

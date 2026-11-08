@@ -1,6 +1,6 @@
 # ADR-005: Custom evaluation runner with critical regression gates
 
-**Status:** Proposed
+**Status:** Implemented. Offline tier passing; live tier never run
 **Date:** 2026-11-04
 
 ## Context

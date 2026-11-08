@@ -1,7 +1,9 @@
-# ADR-008: Staff sessions with Auth.js; signed tokens for callers
+# ADR-008: Custom staff sessions; signed tokens for callers
 
-**Status:** Proposed. **Needs your approval.**
+**Status:** Implemented, revised 2026-11-05. It hasn't had an independent review.
 **Date:** 2026-11-04
+
+**Revision.** The original decision was Auth.js. While building, it turned out Auth.js's password provider requires JWT sessions, which can't be revoked immediately, and its database sessions need an OAuth or email provider, and this demo has neither. So the build uses a small custom implementation: scrypt password hashes, random session tokens stored only as hashes, idle and absolute expiry, immediate revocation, and SameSite=Strict HttpOnly cookies with an origin check. **Hand-written auth is a real risk, and there is no MFA. Use an identity provider if this ever goes beyond a demo.** The text below is the original reasoning.
 
 ## Context
 

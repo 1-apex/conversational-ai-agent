@@ -1,5 +1,7 @@
 # 13 — Testing Strategy
 
+**Build status (2026-11-05):** 244 Vitest tests and 12 Playwright journeys exist and pass. Live evaluations and independent security testing haven't happened. See [implementation status](implementation-status.md).
+
 **Status: Proposed. The repository has no tests today.**
 
 **Test the safety rules hardest, and test them without network access, so they can run on every pull request.** Tools: Vitest for unit and integration, Playwright for end-to-end, and the [evaluation system](07-ai-evaluation-framework.md) for AI behaviour.

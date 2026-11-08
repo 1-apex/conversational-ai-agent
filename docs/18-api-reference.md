@@ -2,92 +2,69 @@
 
 **Current endpoints are verified against the working tree on 2026-11-05. Proposed endpoints are not implemented and may change.**
 
-## Current endpoints
+## Conventions
 
-All are unauthenticated. `/api/agent` returns a fixed emergency message without calling the LLM if the input or any earlier caller turn matches the interim phrase check, and it prepends the demo disclosure to the opening greeting.
+Every route uses the wrapper in `lib/http/route.ts`. Errors are `{ "error": { "code", "correlationId" } }` with no upstream or database text, and every response has an `X-Correlation-Id` header. Common errors: `400 invalid_json`, `400 invalid_request`, `401 unauthorized`, `403 forbidden`, `403 bad_origin`, `413 payload_too_large`, `429 rate_limited`, `500 internal_error`, `503 no-db`.
 
-All use the route wrapper. Errors are `{ "error": { "code", "correlationId" } }`, and every response has an `X-Correlation-Id` header. Common errors: `400 invalid_json`, `400 invalid_request`, `413 payload_too_large`, `429 rate_limited`, `500 internal_error`.
+Access is one of `public`, `call-token` (the handler verifies a signed token), `service` (`CRON_SECRET`) or a staff permission. A test fails if a route handling call data or staff work lacks a staff permission.
 
-| Method and path | Rate limit (per min) | Body limit | Request | Response | Issues |
-| --- | --- | --- | --- | --- | --- |
-| `POST /api/agent` | 30 | 1 MB | `{ history?: up to 200 turns, userInput?: up to 2,000 chars, currentAgent?: AgentName }` | `{ reply, agent, handoff }`; `502 upstream_error` | Client still controls state |
-| `POST /api/tts` | 30 | 8 KB | `{ text: 1 to 1,000 chars }` | `audio/mpeg` stream; `501 tts_not_configured`; `502 upstream_error` | Speaks any text |
-| `POST /api/extract` | 5 | 2 MB | `{ turns: 1 to 500, duration?: number }` | `CallBriefData` | Open to anyone |
-| `POST /api/calls` | 10 | 2 MB | `{ id, startedAt: ISO date, duration?, agentsUsed?, turns?, brief?, sentiment? }` | `{ ok: true }`; `{ ok: false, reason: "no-db" }` | Open write |
-| `GET /api/analytics` | 30 | — | — | `{ calls: [...] }`, last 100, no transcripts; `503 no-db` | Open read of briefs |
+## Caller API
 
-## Proposed conventions
+| Method and path | Access | Limit/min | Purpose |
+| --- | --- | --- | --- |
+| `POST /api/calls` | public | 10 | Start a call. Returns `callId`, `callToken`, greeting `text`, `speechToken` |
+| `POST /api/calls/:id/turns` | call-token | 30 | One turn. See below |
+| `POST /api/calls/:id/end` | call-token | 5 | End the call. Returns `brief` and `intelligence` |
+| `POST /api/calls/:id/callback` | call-token | 10 | Add a callback number. Needs a database |
+| `POST /api/tts` | call-token | 30 | `{ speechToken }`. Audio stream, `501 tts_not_configured` or `502 upstream_error`. Only speaks signed text |
 
-- **Errors:** `{ "error": { "code": "string", "correlationId": "uuid" } }`. No upstream or database text.
-- **Header:** `X-Correlation-Id` on all responses.
-- **Access:** `public-health`, `call-token`, `staff:<permission>`, `service`.
-- **Validation:** strict Zod schemas. Unknown fields are rejected or ignored as specified per route, never trusted.
-
-## Proposed: caller API
-
-| Method and path | Access | Purpose |
-| --- | --- | --- |
-| `POST /api/calls` | Rate limited, public | Create a call; returns ID, token, notice and greeting |
-| `POST /api/calls/:id/turns` | Call token | Submit caller text; returns validated reply |
-| `POST /api/calls/:id/turns/:turnId/speech` | Call token | Audio for a validated agent turn |
-| `POST /api/calls/:id/events` | Call token | Report playback complete, barge-in, STT failure, client timings |
-| `POST /api/calls/:id/callback` | Call token | Add callback request |
-| `POST /api/calls/:id/end` | Call token | End the call |
-
-The `POST /api/calls` path keeps its name but changes meaning, which is a breaking change. `/api/agent`, `/api/tts`, `/api/extract` and the current `/api/calls` behaviour are removed when the browser moves to this API.
-
-**Turn request:**
-
-```json
-{ "transcript": "string, max 2000 chars", "clientTurnId": "uuid", "source": "voice | typed", "interruptedTurnId": "uuid | null" }
-```
+**Turn request:** `{ "callToken", "event": "message" | "takeover" | "silence" | "human_request", "text"?: "up to 2,000 chars" }`
 
 **Turn response:**
 
 ```json
 {
+  "callToken": "new signed state",
   "turnId": "uuid",
   "text": "validated reply",
-  "agent": "orchestrator | sales | product | general | b2b",
-  "pathway": "normal | restricted | boundary_script | emergency_script",
-  "callState": "SPEAKING",
-  "speechAvailable": true
+  "agent": "agent that spoke",
+  "nextAgent": "agent for the next turn",
+  "pathway": "normal | restricted | boundary_script | emergency_script | human_request | injection_script",
+  "handoff": false,
+  "escalationId": null,
+  "speechToken": "signed text for /api/tts"
 }
 ```
 
-No internal rule IDs, citations or scores go to the caller's browser. `clientTurnId` makes retries idempotent.
+Extra errors: `401 invalid_call_token`, `409 call_ended`, `409 no_pending_takeover`, `409 no_more_checkins`.
 
-## Proposed: staff API
+The old `/api/agent` and `/api/extract` routes are gone, and `POST /api/calls` has a new meaning.
+
+## Staff API
+
+Staff routes return 401 with no session, 403 without permission, and 404 for another organization's record. Writes also require a same-origin request.
 
 | Method and path | Permission | Purpose |
 | --- | --- | --- |
-| `GET /api/staff/calls` | `calls:list` | List, scoped by organization |
-| `GET /api/staff/calls/:id` | `calls:read` | Header and summary |
-| `GET /api/staff/calls/:id/transcript` | `transcript:read`, audited | Transcript |
-| `DELETE /api/staff/calls/:id` | `calls:delete`, audited | Deletion request |
-| `GET /api/analytics` | `analytics:read` | SQL aggregates, no transcripts |
-| `GET /api/escalations` | `escalations:read` | Queue |
-| `PATCH /api/escalations/:id` | `escalations:write`, audited | Assign, change status |
-| `POST /api/knowledge/documents` | `knowledge:upload` | Upload |
-| `POST /api/knowledge/versions/:id/approve` | `knowledge:approve`, not own upload | Approve |
-| `POST /api/knowledge/versions/:id/retire` | `knowledge:approve` | Retire |
-| `POST /api/reviews` | `reviews:write` | Record a finding or correction |
-| `POST /api/reviews/:id/evaluation-case` | `reviews:write` | Propose a case; approval required |
-| `GET /api/evaluations/runs`, `GET /api/evaluations/runs/:id` | `evaluations:read` | Results |
-| `POST /api/evaluations/baseline` | `evaluations:admin`, audited | Promote baseline |
-| `GET /api/audit-logs` | `audit:read` | Auditor view |
+| `POST /api/auth/login`, `/logout`; `GET /api/auth/me` | public | Session management. Login is limited to 10/min |
+| `GET /api/analytics` | `analytics:read` | SQL totals, per-day counts, latency, safety and model counts, latest 100 calls |
+| `GET /api/staff/calls/:id` | `transcript:read`, or assigned | Transcript and summary. Audited |
+| `DELETE /api/staff/calls/:id` | `calls:delete` | Delete. Audited |
+| `POST /api/staff/users/:id/revoke-sessions` | `sessions:manage` | End someone's sessions |
+| `GET /api/escalations` | `escalations:read` | Queue. Support sees own and unclaimed |
+| `GET /api/escalations/:id` | `escalations:read` | Detail. The number is shown only to the assignee or a supervisor |
+| `PATCH /api/escalations/:id` | `escalations:write` | `{ action: "claim" | "assign" | "status", ... }` |
+| `GET /api/knowledge`, `POST /api/knowledge` | `knowledge:read`, `knowledge:upload` | List, upload text up to 1 MB |
+| `GET /api/knowledge/versions/:id` | `knowledge:read` | Chunks for review |
+| `POST /api/knowledge/versions/:id` | `knowledge:approve` | `{ action: "approve" | "reject" | "retire" }`. `409 own_upload` |
+| `GET /api/reviews`, `POST /api/reviews` | `reviews:write` | Findings, corrections, proposed cases |
+| `GET /api/evaluations/runs`, `/runs/:id` | `evaluations:read` | Stored runs and failures |
+| `GET /api/audit-logs` | `audit:read` | Latest 200 entries and chain status |
 
-Staff routes return 401 with no session, 403 without permission, and 404 for another organization's record.
-
-## Proposed: system
+## System
 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
-| `GET /api/health` | Public | Overall status only |
-| `GET /api/health/details` | `ops:read` | Dependency status |
-| `POST /api/internal/retention` | Service credential | Retention job |
-| `POST /api/internal/sweep-calls` | Service credential | Close idle calls |
-
-## Versioning
-
-Internal API, used only by this app, so no version prefix for now. Add one if an outside client appears.
+| `GET /api/health` | public | Overall status only |
+| `GET /api/health/details` | `ops:read` | Database, configured providers, versions |
+| `GET /api/internal/retention` | service | Daily retention and idle-call sweep |

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import DemoNotice from "@/components/DemoNotice";
+import { StaffNav } from "@/components/staff/StaffShell";
 
 interface CallBrief {
   summary?:     string;
@@ -24,6 +25,34 @@ interface CallRow {
   sentiment:   string | null;
   brief:       CallBrief | null;
   created_at:  string;
+}
+
+interface ApiCall {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  agents_used: string[] | null;
+  sentiment: string | null;
+  intelligence: { summary?: string; actionItems?: { text: string }[] } | null;
+}
+
+interface Totals { total: number; avg_duration: number | null; positive: number; }
+interface Ops {
+  latency: Record<string, number | null>;
+  safety: { severity: string; stage: string; count: number }[];
+  models: { model_id: string; turns: number }[];
+}
+
+function toCallRow(c: ApiCall): CallRow {
+  return {
+    id: c.id, started_at: c.started_at, created_at: c.started_at,
+    duration: c.ended_at ? Math.round((Date.parse(c.ended_at) - Date.parse(c.started_at)) / 1000) : null,
+    agents_used: c.agents_used, sentiment: c.sentiment,
+    brief: c.intelligence ? {
+      summary: c.intelligence.summary,
+      actionItems: c.intelligence.actionItems?.map(a => a.text),
+    } : null,
+  };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -59,15 +88,16 @@ function positiveRate(calls: CallRow[]) {
   return Math.round((calls.filter(c => c.sentiment === "positive").length / calls.length) * 100);
 }
 
-function callsPerDay(calls: CallRow[]) {
+// Dates are UTC on both sides, so a late-evening call lands in the same bar as its label
+function callsPerDay(rows: { day: string; count: number }[]) {
   const days: { label: string; count: number }[] = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const label   = d.toLocaleDateString("en-US", { weekday: "short" });
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
     const dateStr = d.toISOString().slice(0, 10);
-    const count   = calls.filter(c => c.created_at.slice(0, 10) === dateStr).length;
-    days.push({ label, count });
+    days.push({
+      label: d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+      count: rows.find(r => r.day === dateStr)?.count ?? 0,
+    });
   }
   return days;
 }
@@ -318,13 +348,27 @@ export default function DashboardPage() {
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState("");
   const [selectedCall, setSelectedCall] = useState<CallRow | null>(null);
+  const [totals,      setTotals]      = useState<Totals | null>(null);
+  const [perDayServer, setPerDayServer] = useState<{ day: string; count: number }[]>([]);
+  const [ops,         setOps]         = useState<Ops | null>(null);
 
   useEffect(() => {
     fetch("/api/analytics")
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 401) window.location.href = "/login";
+        return r.json();
+      })
       .then(d => {
-        if (d.error) setError(d.error.code === "no-db" ? "Call logging isn't configured, so there's nothing to show." : "Failed to load analytics");
-        else setCalls(d.calls as CallRow[]);
+        if (d.error) {
+          setError(d.error.code === "no-db" ? "Call logging isn't configured, so there's nothing to show."
+            : d.error.code === "forbidden" ? "Your role can't view analytics."
+            : "Failed to load analytics");
+          return;
+        }
+        setCalls((d.calls as ApiCall[]).map(toCallRow));
+        setTotals(d.totals);
+        setPerDayServer(d.perDay);
+        setOps({ latency: d.latency, safety: d.safety, models: d.models });
       })
       .catch(() => setError("Failed to load analytics"))
       .finally(() => setLoading(false));
@@ -337,10 +381,10 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const avg      = avgDuration(calls);
+  const avg      = totals?.avg_duration ?? avgDuration(calls);
   const topAgent = mostUsedAgent(calls);
-  const posRate  = positiveRate(calls);
-  const perDay   = callsPerDay(calls);
+  const posRate  = totals?.total ? Math.round((totals.positive / totals.total) * 100) : positiveRate(calls);
+  const perDay   = callsPerDay(perDayServer);
   const maxDay   = Math.max(...perDay.map(d => d.count), 1);
   const agents   = agentUsage(calls);
 
@@ -358,7 +402,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <div className="-mx-6 -mt-6 mb-6"><DemoNotice /></div>
+      <div className="-mx-6 -mt-6 mb-6"><DemoNotice /><StaffNav /></div>
       {selectedCall &&<BriefModal call={selectedCall} onClose={() => setSelectedCall(null)} />}
 
       <div className="max-w-5xl mx-auto space-y-6">
@@ -367,15 +411,24 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Demo Call Analytics</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Last {calls.length} calls</p>
+            <p className="text-xs text-gray-400 mt-0.5">Totals cover all calls. The list shows the latest {calls.length}. Sentiment is a keyword heuristic.</p>
           </div>
           <Link href="/" className="text-xs text-teal-600 hover:underline">← Back to agent</Link>
         </div>
 
+        {ops && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm text-xs text-gray-600 space-y-1">
+            <h2 className="text-sm font-semibold text-gray-700">Operations</h2>
+            <p>Turn latency: p50 {ops.latency?.total_p50 ?? "—"} ms, p95 {ops.latency?.total_p95 ?? "—"} ms. Model p95 {ops.latency?.generation_p95 ?? "—"} ms. Safety checks p95 {ops.latency?.safety_p95 ?? "—"} ms.</p>
+            <p>Safety events: {ops.safety.length === 0 ? "none" : ops.safety.map(s => `${s.count} ${s.severity} (${s.stage})`).join(", ")}.</p>
+            <p>Model turns: {ops.models.length === 0 ? "none" : ops.models.map(m => `${m.turns} on ${m.model_id}`).join(", ")}.</p>
+          </div>
+        )}
+
         {/* Summary cards */}
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: "Total Calls",   value: String(calls.length) },
+            { label: "Total Calls",   value: String(totals?.total ?? calls.length) },
             { label: "Avg Duration",  value: fmtDuration(avg) },
             { label: "Top Agent",     value: topAgent },
             { label: "Positive Rate", value: `${posRate}%` },

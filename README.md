@@ -9,7 +9,9 @@ A browser-based AI voice agent that simulates a customer-support line about Inog
 - Listens through the browser's speech recognition and replies out loud.
 - Routes the conversation between five AI agents: Main, Sales, Product, General and B2B.
 - Handles interruptions and silence.
-- Writes a call brief when the call ends and, if a database is configured, logs it for an analytics dashboard at `/dashboard`.
+- Runs every reply through a safety engine and a response validator, with fixed scripts for emergencies and medical questions.
+- Writes a structured call brief when the call ends.
+- With a database: staff login, a practice support queue, document approval, quality reviews, evaluations, and an audit log.
 
 ## Stack
 
@@ -32,7 +34,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Set at least `GROQ_API_KEY` in `.env`, then open http://localhost:3000 in Chrome or Edge and allow the microphone.
+Set at least `GROQ_API_KEY` in `.env`, then open http://localhost:3000 in Chrome or Edge and allow the microphone. For staff pages and full setup with no accounts, follow [the testing guide](docs/testing-guide.md).
 
 | Command | Purpose |
 | --- | --- |
@@ -41,17 +43,21 @@ Set at least `GROQ_API_KEY` in `.env`, then open http://localhost:3000 in Chrome
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript check |
 | `npm test` | Automated tests; no keys or database needed |
+| `npm run test:e2e` | Browser journeys, after `npm run build` |
+| `npm run eval:offline` | 235-case benchmark with scripted model replies |
+| `npm run eval:live` | The same with the real model. Needs `GROQ_API_KEY` and costs API usage |
+| `npm run db:migrate`, `npm run db:seed` | Create tables and test accounts |
 
 ## Known limitations
 
-This project is being hardened in phases, and the following are still true:
-
-- `/dashboard`, `/api/analytics` and `/api/calls` have **no authentication**. Don't deploy it publicly with logging enabled.
-- Replies aren't validated before they are spoken.
-- Emergency handling is a basic phrase check. It will miss things.
-- Automated tests cover the API and safety logic with mocked providers. There are no end-to-end browser tests yet.
+- The safety engine is phrase matching plus an LLM classifier. It will miss things, and no clinician has reviewed it.
+- Every safety result so far comes from scripted model replies. **The live evaluation has never been run.**
+- Product information in `lib/inogen-knowledge.ts` is largely unverified.
+- Staff login is a small custom implementation with no MFA.
 - Speech goes to outside services, so don't use real personal or health information.
+
+[`docs/implementation-status.md`](docs/implementation-status.md) has the full list.
 
 ## Documentation
 
-[`docs/`](docs/README.md) has the audit, target architecture, decision records, diagrams and roadmap. Most of it describes a proposed design, not current behaviour, and each document says which.
+[`docs/`](docs/README.md) has the audit, architecture, decision records, diagrams, runbooks and roadmap.

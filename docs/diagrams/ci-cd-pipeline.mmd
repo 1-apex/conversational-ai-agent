@@ -1,4 +1,4 @@
-%% STATUS: TARGET (proposed, not implemented). No CI exists today.
+%% STATUS: PARTLY IMPLEMENTED: PR checks only. Live evaluations and manual gates are not wired up (2026-11-05, branch platform-phases).
 flowchart LR
   pr["Pull request"] --> static["Lint, typecheck, dependency audit, secret scan"]
   static --> unit["Vitest unit and integration"]
